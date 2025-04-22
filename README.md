@@ -74,6 +74,32 @@ Twitch is infamous for changing their website without further notice, which may 
 - There is no attempt to write any information to an external resource, other than your personal blacklist in case you are using the cloud storage of your browser. The cloud storage is only accessible to you and the cloud storage's operator, such as Google (Chrome), Mozilla (Firefox), Microsoft (Edge) etc. The blacklist only contains category names, channel names, tags and titles, see export.
 - There are no code injections or outgoing requests (such as [script tags](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/script), [fetches](https://developer.mozilla.org/en-US/docs/Web/API/fetch) or [XmlHttpRequests](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest)). There is also no dependency on any library other than the native browser extension API ([Chrome](https://developer.chrome.com/docs/extensions/reference/) and [WebExtensions](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions)).
 
+## Updates/Changelog
+
+This forked repository includes performance optimizations to the `directory.js` file, specifically designed to improve the extension's handling of dynamic content loading on pages like `https://www.twitch.tv/directory/category/games-demos`. Below is a detailed changelog of the modifications made, highlighting the differences from the original repository:
+
+**April 18, 2025**
+- **Debounced Scroll Event Handling**: Added debouncing to the `onScroll` function to reduce the frequency of filtering operations during rapid scrolling, preventing performance bottlenecks.
+- **Batched DOM Updates**: Modified the `filterDirectoryItems` function to batch hide operations using `classList.add('uttv-hidden-item')`, reducing reflows and improving rendering performance.
+- **Optimized Selectors**: Updated DOM selectors to be more specific, targeting precise container elements (e.g., `div.Layout-sc-1xcs6mc-0.jCGmCy` for stream cards), enhancing query efficiency.
+- **Mutation Observer Enhancements**: Improved the Mutation Observer in `observeSidebar` to target specific sidebar containers and use `requestAnimationFrame` for updates, reducing layout thrashing.
+- **In-Memory Caching**: Ensured blacklist checks use an in-memory cache (`storedBlacklistedItems`), speeding up filtering operations.
+- **Event Delegation**: Implemented event delegation for hide buttons, reducing the number of event listeners and improving performance on pages with many items.
+
+These changes significantly reduce sluggishness on dynamically loading pages, ensuring a smoother user experience compared to the original repository.
+
+## TODO: Unfinished Page logic / Templates 
+- Browse: Categories (double check)
+- Browse: Live Channels
+- Game: Live Channels (preview slider is not filtered)
+- Game: Videos (0% finished)
+- Game: Clips (0% finished)
+- Frontpage/Discover (carousel is not filtered) (0% finished)
+- Explore Gaming/IRL/Music/Creative/Esports - (80%)
+- Following - (50%)
+- Sidebar (filtering only, no buttons to add items to the blacklist) - (0%)
+- Most work has been getting extension to work with game categories i.e. https://www.twitch.tv/directory/category/grand-theft-auto-v https://www.twitch.tv/directory/category/retro etc 
+
 ## Contributing to this extension
 Regardless if you are a regular user or a developer yourself, [check out the contribution page for information about how you can help this project](CONTRIBUTING.md).
 
