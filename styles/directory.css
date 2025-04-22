@@ -1,4 +1,43 @@
-﻿.uttv-hidden {
+﻿/*
+	START OF FORK-SPECIFIC COMMENTS
+	---------------------------------
+	This CSS file is part of a fork. The comments below highlight changes
+	or additions made relative to the original repository.
+*/
+
+/*
+ * Original Comment Block (Retained for context):
+ * Added For Debuging.
+ * Added for possible conflicts between .uttv-hidden and the new layout - Verify
+ * TODO: Confirm if still needed
+ */
+
+/*
+ * FORK CHANGE: Added .uttv-hidden-item as a dedicated class for this fork.
+ * PURPOSE: To prevent potential CSS conflicts or unintended style overrides
+ *          if the original extension's CSS for `.uttv-hidden` is updated
+ *          or targets different elements. This ensures this fork can reliably
+ *          hide its specific elements without interference.
+ * FUNCTION: It performs the exact same function as `.uttv-hidden` (hiding elements)
+ *           but uses a unique name for isolation within this fork.
+ * STATUS: This class should be used instead of `.uttv-hidden` for elements
+ *         hidden specifically by this fork's logic.
+ */
+.uttv-hidden-item {
+    display: none !important;
+}
+
+/*
+ * ORIGINAL CLASS: .uttv-hidden
+ * NOTE: This class likely exists in the original extension.
+ *       This fork introduced `.uttv-hidden-item` (see above) to avoid
+ *       potential conflicts. Usage of `.uttv-hidden` directly in this fork
+ *       should be reviewed to see if `.uttv-hidden-item` is more appropriate.
+ *       The original TODO "Confirm if still needed" likely refers to whether
+ *       this original class is still necessary *at all* in the fork, or if
+ *       all hiding functions have been migrated to `.uttv-hidden-item`.
+ */
+.uttv-hidden {
 	display: none !important;
 }
 

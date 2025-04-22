@@ -225,30 +225,36 @@
 		switch (page) {
 
 			case '':
-				return 'frontpage';
+				return 'frontpage'; // May need different selectors later
 
 			case '/directory':
 				return 'categories';
 
 			case '/directory/all':
-				return 'channels';
+				return 'channels'; // Needs verification
 
 			case '/directory/gaming':
 			case '/directory/irl':
 			case '/directory/music':
 			case '/directory/creative':
 			case '/directory/esports':
-				return 'explore';
+				return 'explore'; // May need different selectors later
 
 			case '/directory/following':
 			case '/directory/following/live':
+				return 'following'; // Assume stream card structure
+
 			case '/directory/following/videos':
+				return 'videos'; // Needs VOD card structure
+
 			case '/directory/following/hosts':
+				return 'following'; // Needs verification
+
 			case '/directory/following/games':
-				return 'following';
+				return 'following'; // Needs verification
 
 			case '/directory/following/channels':
-				return null;
+				return null; // Unsupported
 
 			default:
 
@@ -256,41 +262,39 @@
 				if (RegExp('^/directory/.+').test(page) === true) {
 
 					if (page.indexOf('/all/tags/') >= 0) {
-
-						return 'channels';
+						return 'channels'; // Needs verification (stream card structure assumed)
 					}
 
 					if (page.indexOf('/tags/') >= 0) {
-
-						return 'categories';
+						return 'categories'; // Needs verification (category card structure assumed)
 					}
 
-					if (page.indexOf('/videos/') >= 0) {
-
-						return 'videos';
+					if (page.indexOf('/videos') >= 0) { // Match /videos and /videos/all etc.
+						return 'videos'; // Needs VOD card structure
 					}
 
 					if (page.indexOf('/clips') >= 0) {
-
-						return 'clips';
+						return 'clips'; // Needs Clip card structure
 					}
 
-					if (page.indexOf('/game/') >= 0) {
-
-						return 'game';
+					// This handles /directory/category/... and /directory/game/...
+					if (page.includes('/category/') || page.includes('/game/')) {
+						// Assume these pages show stream cards primarily
+						return 'game'; // Using 'game' generically for stream card directories
 					}
 
 					if (page.indexOf('/collection/') >= 0) {
-
-						return 'collection';
+						return 'collection'; // Needs verification
 					}
 
-					return 'channels';
+					// Default fallback for other /directory/... paths
+					return 'channels'; // Needs verification (stream card structure assumed)
 				}
 		}
 
 		return logWarn('Unable to detect type of page:', page);
 	}
+
 
 	/**
 	 * Constantly checks the current location path to detect change of page.
@@ -314,7 +318,7 @@
 			currentPage     = page;
 			currentPageType = getPageType(page);
 
-			logInfo('Page changed to:', currentPage);
+			logInfo('Page changed to:', currentPage, '(Type:', currentPageType, ')');
 
 			if (initRun === true) {
 
@@ -341,41 +345,26 @@
 	function observeSidebar() {
 		logTrace('invoking observeSidebar()');
 
-		const observerCooldown = 500;
+		const targetSelector = 'div[aria-label="Recommended Channels"]'; // More specific
+		const target = rootNode.querySelector(targetSelector) || rootNode.querySelector('nav#side-nav');
 
-		const targetSelector = '[data-a-target^="side-nav-bar"]';
-		const target         = rootNode.querySelector(targetSelector);
-
-		if (target !== null) {
-
-			const observer = new MutationObserver(function callback_observeSidebar() {
-				logTrace('callback invoked: observeSidebar()');
-
-				// force cooldown to avoid processing multiple mutations at once
-				const timeElapsed = (new Date() - lastSidebarChange);
-				if (timeElapsed < observerCooldown) {
-
-					return logVerbose('Skipping sidebar mutation, because it was fired within the ' + observerCooldown + ' ms cooldown.');
-				}
-
-				lastSidebarChange = new Date();
-
-				// trigger sidebar filter
-				if (hideFollowing === true) {
-
-					filterSidebar();
-
-				} else {
-
-					filterSidebar('recommended');
-				}
-
+		if (target) {
+			if (target.observer) {
+				target.observer.disconnect();
+			}
+			const observer = new MutationObserver(mutations => {
+				requestAnimationFrame(() => {
+					const now = Date.now();
+					if (now - lastSidebarChange < 500) return;
+					lastSidebarChange = now;
+					filterSidebar(hideFollowing ? 'visible' : 'recommended');
+				});
 			});
 			observer.observe(target, { childList: true, subtree: true });
-
+			target.observer = observer;
+			logVerbose('Sidebar observer attached to:', target);
 		} else {
-
-			logWarn('Unable to find sidebar. Expected:', targetSelector);
+			logWarn('Sidebar target not found:', targetSelector);
 		}
 	}
 
@@ -393,15 +382,15 @@
 			// prevent listening during page load
 			if (pageLoads === true) {
 
-				logVerbose('Stopped checkForItems(), because page load is in progress.');
-				window.clearInterval(checkForItemsInterval);
+				//logVerbose('Skipping checkForItems(), because page load is in progress.');
+				// Don't clear interval here, page load might finish
 				return;
 			}
 
 			// prevent filtering the directory more than once at the same time
 			if (directoryFilterRunning === true) {
 
-				logVerbose('Aborted invocation of checkForItems(), because page load is in progress.');
+				logVerbose('Aborted invocation of checkForItems(), because directory filter is running.');
 				return;
 			}
 
@@ -416,7 +405,7 @@
 			const nodes       = getDirectoryItemNodes('unprocessed');
 			const nodesLength = nodes.length;
 
-			// when there are unprocessed items in the directory, assume that the user scrolled down
+			// when there are unprocessed items in the directory, assume that the user scrolled down or content loaded dynamically
 			if (nodesLength > 0) {
 
 				logInfo('Found ' + nodesLength + ' unprocessed nodes in the directory of the current page.', nodes);
@@ -431,24 +420,24 @@
 	 */
 	function triggerScroll() {
 		logTrace('invoking triggerScroll()');
-
-		const scrollbarNodeSelector = '.simplebar-content.root-scrollable__content';
+		// Updated selector based on observed structure in Retro - Twitch.html
+		const scrollbarNodeSelector = '.root-scrollable.scrollable-area .simplebar-scroll-content';
 		const scrollbarNode         = rootNode.querySelector(scrollbarNodeSelector);
 
 		if (scrollbarNode !== null) {
-
-			// dispatch scroll event to custom scrollbar
+			logVerbose('Dispatching scroll event to:', scrollbarNode);
+			// Dispatch scroll event to custom scrollbar
 			scrollbarNode.dispatchEvent(
-				new Event('scroll')
+				new Event('scroll', { bubbles: true }) // Ensure event bubbles up
 			);
 			return true;
 
 		} else {
-
-			logError('Unable to find scrollbar. Expected:', scrollbarNodeSelector);
+			// Fallback: scroll the window if the specific element isn't found
+			logWarn('Unable to find custom scrollbar element, attempting window scroll. Expected:', scrollbarNodeSelector);
+			window.scrollBy(0, 1); // Scroll down a tiny bit
+			return false; // Indicate specific target wasn't found
 		}
-
-		return false;
 	}
 
 	/**
@@ -467,7 +456,7 @@
 	 * Filters directory on the current page. Returns the remaining (not blacklisted) items.
 	 */
 	function filterDirectory(mode = 'visible', remove = true) {
-		logTrace('invoking filterDirectory()');
+		logTrace('invoking filterDirectory($, $)', mode, remove);
 
 		// prevent filtering more than once at the same time
 		if (directoryFilterRunning === true) {
@@ -477,20 +466,25 @@
 		}
 
 		directoryFilterRunning = true;
+		logVerbose('Starting directory filter (mode:', mode, 'remove:', remove, ')');
 
 		const items          = getDirectoryItems(mode);
 		const remainingItems = filterDirectoryItems(items, remove);
 
 		directoryFilterRunning = false;
+		logVerbose('Finished directory filter. Remaining items:', remainingItems.length);
 
-		// if items were removed, trigger scroll event to request more items
-		if (remainingItems.length < items.length) {
-
-			// the frontpage has no additional items
-			if (currentPageType !== 'frontpage') {
-
-				logVerbose('Items in the directory were removed. Attempting to request more items.');
+		// If items were removed, trigger scroll event to request more items.
+		// Only trigger if remove was true and items were actually hidden.
+		if (remove === true && remainingItems.length < items.length) {
+			// Check if the page type supports infinite scrolling/loading more items.
+			// Avoid scrolling on pages like 'frontpage' where it might not apply or be desired.
+			const scrollablePageTypes = ['categories', 'channels', 'game', 'videos', 'clips', 'following', 'explore', 'collection']; // Add others as needed
+			if (scrollablePageTypes.includes(currentPageType)) {
+				logVerbose('Items in the directory were removed. Attempting to request more items via scroll.');
 				triggerScroll();
+			} else {
+				logVerbose('Items removed, but not triggering scroll for page type:', currentPageType);
 			}
 		}
 
@@ -501,36 +495,44 @@
 	 * Filters the provided items and returns the remaining (not blacklisted) items.
 	 */
 	function filterDirectoryItems(items, remove = true) {
-		logTrace('invoking filterDirectoryItems($)', items);
+		logTrace('invoking filterDirectoryItems($, $)', items, remove);
 
-		let remainingItems = [];
+		const toHide = [];
+		const remainingItems = [];
 
 		const itemsLength = items.length;
+		logVerbose('Filtering', itemsLength, 'directory items...');
 		for (let i = 0; i < itemsLength; i++) {
 
 			const item = items[i];
-
-			// mark item node as being processed
-			item.node.setAttribute('data-uttv-processed', '');
-
-			if (remove === false) { continue; }
-
-			if (isBlacklistedItem(item) === true) {
-
-				if (removeDirectoryItem(item) === true) {
-
-					logVerbose('Removed item in directory due to being blacklisted:', item);
-					continue;
-
-				} else {
-
-					logError('Unable to remove blacklisted item in directory:', item);
-				}
+			if (!item || !item.node) {
+				logWarn('Skipping invalid item:', item);
+				continue;
 			}
 
-			remainingItems.push(item);
+			// mark item node as being processed
+			// Use the container node if available, otherwise the primary node
+			const nodeToMark = item.containerNode || item.node;
+			nodeToMark.setAttribute('data-uttv-processed', '');
+
+			if (remove === false) {
+				remainingItems.push(item); // Keep item if not removing
+				continue;
+			}
+
+			if (isBlacklistedItem(item) === true) {
+				toHide.push(item.containerNode);
+			} else {
+				remainingItems.push(item);
+			}
 		}
 
+		if (remove && toHide.length > 0) {
+			toHide.forEach(node => node.classList.add('uttv-hidden-item'));
+			logVerbose('Batched hide of', toHide.length, 'items');
+		}
+
+		logVerbose('Finished filtering items. Kept:', remainingItems.length);
 		return remainingItems;
 	}
 
@@ -538,7 +540,7 @@
 	 * Filters items in the sidebar of the current page. Returns the remaining (not blacklisted) items.
 	 */
 	function filterSidebar(mode = 'visible') {
-		logTrace('invoking filterSidebar()');
+		logTrace('invoking filterSidebar($, $)', mode);
 
 		// prevent filtering more than once at the same time
 		if (sidebarFilterRunning === true) {
@@ -548,11 +550,13 @@
 		}
 
 		sidebarFilterRunning = true;
+		logVerbose('Starting sidebar filter (mode:', mode, ')');
 
 		const items          = getSidebarItems(mode);
-		const remainingItems = filterSidebarItems(items);
+		const remainingItems = filterSidebarItems(items); // Always removes if blacklisted
 
 		sidebarFilterRunning = false;
+		logVerbose('Finished sidebar filter. Remaining items:', remainingItems.length);
 
 		return remainingItems;
 	}
@@ -566,29 +570,40 @@
 		let remainingItems = [];
 
 		const itemsLength = items.length;
+		logVerbose('Filtering', itemsLength, 'sidebar items...');
 		for (let i = 0; i < itemsLength; i++) {
 
 			const item = items[i];
+			if (!item || !item.node) {
+				logWarn('Skipping invalid sidebar item:', item);
+				continue;
+			}
 
 			// mark item node as being processed
-			item.node.setAttribute('data-uttv-processed', '');
+			// Use the container node if available, otherwise the primary node
+			const nodeToMark = item.containerNode || item.node;
+			nodeToMark.setAttribute('data-uttv-processed', '');
 
 			if (isBlacklistedItem(item) === true) {
 
 				if (removeSidebarItem(item) === true) {
 
-					logVerbose('Removed item in sidebar due to being blacklisted:', item);
+					logVerbose('Removed item in sidebar due to being blacklisted:', item.type, item.name || item.category);
+					// Do not push to remainingItems
 					continue;
 
 				} else {
 
 					logError('Unable to remove blacklisted item in sidebar:', item);
+					// If removal failed, still treat it as visible for safety
+					remainingItems.push(item);
 				}
+			} else {
+				// If not blacklisted, add to remaining items
+				remainingItems.push(item);
 			}
-
-			remainingItems.push(item);
 		}
-
+		logVerbose('Finished filtering sidebar items. Kept:', remainingItems.length);
 		return remainingItems;
 	}
 
@@ -604,28 +619,26 @@
 
 		const items = [];
 
-		const itemNodes       = getDirectoryItemNodes(mode);
+		const itemNodes       = getDirectoryItemNodes(mode); // This now returns containers
 		const itemNodesLength = itemNodes.length;
+		logVerbose('Found', itemNodesLength, 'potential item nodes for mode:', mode);
 
 		for (let i = 0; i < itemNodesLength; i++) {
-
-			const item = readItem(
-				itemNodes[i]
-			);
-			if (item === null) { continue; }
-
+			// Pass the container node to readItem
+			const item = readItem(itemNodes[i]);
+			if (item === null) {
+				logVerbose('Failed to read item from node:', itemNodes[i]);
+				continue;
+			}
 			items.push(item);
 		}
 
 		const itemsLength = items.length;
 
 		if (itemsLength > 0) {
-
-			logVerbose('Found ' + itemsLength + ' items on the current page:', items);
-
+			logVerbose('Successfully read ' + itemsLength + ' items on the current page:', items.map(it => it.name || it.category || it.title || 'Unknown'));
 		} else {
-
-			logWarn('No items found on the current page. Provided nodes:', itemNodes);
+			logWarn('No valid items read from the found nodes.', itemNodes);
 		}
 
 		return items;
@@ -633,89 +646,58 @@
 
 	/**
 	 * Returns all item nodes matching the specified mode in the directory of the current page.
+	 * UPDATE: Now selects the main *container* div for each item type.
 	 */
 	function getDirectoryItemNodes(mode) {
 		logTrace('invoking getDirectoryItemNodes($)', mode);
 
 		if (typeof mode !== 'string') {
-
 			throw new Error('Argument "mode" is required. Expected a string.');
 		}
 
 		const modes = {
-			'visible':     { prefix: '',          suffix: ':not([data-uttv-hidden])'    },
-			'hidden':      { prefix: '',          suffix: '[data-uttv-hidden]'          },
-			'unprocessed': { prefix: '',          suffix: ':not([data-uttv-processed])' },
-			'processed':   { prefix: '',          suffix: '[data-uttv-processed]'       },
-			'recommended': { prefix: '.find-me ', suffix: ':not([data-uttv-processed])' }
+			'visible':     ':not([data-uttv-hidden])',
+			'hidden':      '[data-uttv-hidden]',
+			'unprocessed': ':not([data-uttv-processed])',
+			'processed':   '[data-uttv-processed]',
+			'recommended': '.find-me :not([data-uttv-processed])' // Prefix handled separately if needed
 		};
 
-		let selector;
-		let subSelector = { prefix: '', suffix: '' };
-
-		if (modes[mode]) {
-
-			subSelector = modes[mode];
-
-		} else {
-
+		let suffix = modes[mode];
+		if (!suffix && mode !== 'all') { // 'all' implies no suffix needed
 			throw new Error('Value of argument "mode", which is "' + mode + '", is unknown.');
 		}
+		if (mode === 'all') suffix = ''; // Handle 'all' explicitly
 
-		// "!" will be replaced with prefix, "%" will be replaced with suffix
-		switch (currentPageType) {
+		let selectors = [];
+		let prefix = (mode === 'recommended') ? '.find-me ' : '';
 
-			case 'frontpage':
-			case 'explore':
-			case 'following':
+		// Selector for Stream Cards (Game, Channels, Following, Explore, Frontpage)
+		// Targets the main container div identified in HTML analysis
+		selectors.push(`${prefix}div.Layout-sc-1xcs6mc-0.jCGmCy${suffix}`);
 
-				selector = '!a[data-a-target="preview-card-image-link"]%, !a[data-a-target="tw-box-art-card-link"]%';
+		// Selector for Category Cards (Categories page)
+		// Targets the main container div identified in HTML analysis
+		selectors.push(`${prefix}div.Layout-sc-1xcs6mc-0.ScTowerItem-sc-1sjzzes-2${suffix}`);
 
-			break;
+		// --- TODO: Add selectors for VOD and Clip cards here when their structure is known ---
+		// Example: selectors.push(`${prefix}div.vod-card-container-selector${suffix}`);
+		// Example: selectors.push(`${prefix}div.clip-card-container-selector${suffix}`);
 
-			case 'categories':
+		const combinedSelector = selectors.join(', ');
 
-				selector = '!a[data-a-target="tw-box-art-card-link"]%';
-
-			break;
-
-			case 'channels':
-			case 'game':
-			case 'videos':
-			case 'clips':
-
-				selector = '!a[data-a-target="preview-card-image-link"]%';
-
-			break;
-
-			case 'collection':
-
-				selector = '!article[data-a-target^="card-"]%';
-
-			break;
-
-			default:
-
-				logError('Unable to get item nodes of directory, because the page type is unhandled:', currentPageType);
+		if (!mainNode) {
+			logError('mainNode is null, cannot query for directory items.');
+			return [];
 		}
 
-		// replace selector wildcards
-		if (typeof selector === 'string') {
-
-			selector = selector.replace(/!/g, subSelector.prefix);
-			selector = selector.replace(/%/g, subSelector.suffix);
-		}
-
-		const nodes       = mainNode.querySelectorAll(selector);
+		const nodes       = mainNode.querySelectorAll(combinedSelector);
 		const nodesLength = nodes.length;
 
 		if (nodesLength > 0) {
-
-			logTrace('Found ' + nodesLength + ' nodes in directory.', nodes);
-
+			logTrace('Found ' + nodesLength + ' container nodes in directory using selector:', combinedSelector, nodes);
 		} else {
-
-			logTrace('Unable to find nodes in directory. Expected:', selector);
+			logTrace('Unable to find container nodes in directory. Expected selector:', combinedSelector);
 		}
 
 		return nodes;
@@ -729,28 +711,27 @@
 
 		const items = [];
 
-		const itemNodes       = getSidebarItemNodes(mode);
+		const itemNodes       = getSidebarItemNodes(mode); // This now returns containers
 		const itemNodesLength = itemNodes.length;
+		logVerbose('Found', itemNodesLength, 'potential sidebar nodes for mode:', mode);
 
 		for (let i = 0; i < itemNodesLength; i++) {
-
 			const item = readSidebarItem(
-				itemNodes[i]
+				itemNodes[i] // Pass the container node
 			);
-			if (item === null) { continue; }
-
+			if (item === null) {
+				logVerbose('Failed to read sidebar item from node:', itemNodes[i]);
+				continue;
+			}
 			items.push(item);
 		}
 
 		const itemsLength = items.length;
 
 		if (itemsLength > 0) {
-
-			logVerbose('Found ' + itemsLength + ' sidebar items on the current page:', items);
-
+			logVerbose('Successfully read ' + itemsLength + ' sidebar items:', items.map(it => it.name || 'Unknown'));
 		} else {
-
-			logWarn('No sidebar items found on the current page. Provided nodes:', itemNodes);
+			logWarn('No valid sidebar items read from the found nodes.', itemNodes);
 		}
 
 		return items;
@@ -758,511 +739,479 @@
 
 	/**
 	 * Returns all item nodes matching the specified mode in the sidebar of the current page.
+	 * UPDATE: Now selects the main container div for each sidebar item.
 	 */
 	function getSidebarItemNodes(mode) {
 		logTrace('invoking getSidebarItemNodes($)', mode);
 
 		if (typeof mode !== 'string') {
-
 			throw new Error('Argument "mode" is required. Expected a string.');
 		}
 
 		const modes = {
-			'visible':     { prefix: '', suffix: ':not([data-uttv-hidden])'    },
-			'hidden':      { prefix: '', suffix: '[data-uttv-hidden]'          },
-			'unprocessed': { prefix: '', suffix: ':not([data-uttv-processed])' },
-			'processed':   { prefix: '', suffix: '[data-uttv-processed]'       },
-			'recommended': { prefix: '', suffix: ':not([data-uttv-hidden])'    }
+			'visible':     ':not([data-uttv-hidden])',
+			'hidden':      '[data-uttv-hidden]',
+			'unprocessed': ':not([data-uttv-processed])',
+			'processed':   '[data-uttv-processed]',
+			'recommended': ':not([data-uttv-hidden])' // Filter by section selector below
 		};
 
-		let selector;
-		let subSelector = { prefix: '', suffix: '' };
-
-		if (modes[mode]) {
-
-			subSelector = modes[mode];
-
-		} else {
-
+		let suffix = modes[mode];
+		if (!suffix && mode !== 'all') {
 			throw new Error('Value of argument "mode", which is "' + mode + '", is unknown.');
 		}
+		if (mode === 'all') suffix = '';
 
-		// "!" will be replaced with prefix, "%" will be replaced with suffix
-		selector = [
+		// Base selector for the container of each sidebar item (works for expanded and likely collapsed)
+		const baseItemSelector = `div.Layout-sc-1xcs6mc-0.cwtKyw.side-nav-card${suffix}`;
 
-			'!a[data-a-id^="followed-channel-"]%',
-			'!a[data-a-id^="recommended-channel-"]%',
-			'!a[data-a-id^="popular-channel-"]%',
-			'!a[data-a-id^="similarity-channel-"]%',
-			'!a.side-nav-card%'
-
-		].join(', ');
-
-		// replace selector wildcards
-		if (typeof selector === 'string') {
-
-			selector = selector.replace(/!/g, subSelector.prefix);
-			selector = selector.replace(/%/g, subSelector.suffix);
-		}
-
+		let combinedSelector = baseItemSelector;
 		let nodes = [];
 
-		const sidebarSelector = '[data-a-target^="side-nav-bar"]';
+		const sidebarSelector = 'nav#side-nav'; // Target the nav element
 		const sidebarNode     = rootNode.querySelector(sidebarSelector);
 
 		if (sidebarNode !== null) {
-
-			// if there are two or more sections in the sidebar, the second section is for recommended channels
 			if (mode === 'recommended') {
-
-				const sidebarSectionsSelector = '.side-nav-section';
-				const sidebarSectionsNodes    = sidebarNode.querySelectorAll(sidebarSectionsSelector);
-
-				logVerbose('Looking for recommended channels section in sidebar.', sidebarSectionsSelector);
-
-				let sidebarLabel = null;
-				if (sidebarSectionsNodes.length === 1) {
-
-					sidebarLabel = sidebarSectionsNodes[0].getAttribute('aria-label');
-
-				} else if (sidebarSectionsNodes.length >= 2) {
-
-					sidebarLabel = sidebarSectionsNodes[1].getAttribute('aria-label');
-
+				// Find the "Recommended Channels" section specifically
+				const recommendedSection = sidebarNode.querySelector('div[aria-label="Recommended Channels"]');
+				if (recommendedSection) {
+					nodes = Array.from(recommendedSection.querySelectorAll(baseItemSelector)); // Query within the section
+					logTrace('Found', nodes.length, 'nodes in Recommended section.');
 				} else {
-
-					logVerbose('Unable to determine recommended channels section.');
+					logVerbose('Could not find Recommended Channels section.');
 				}
-
-				if (sidebarLabel !== null) {
-
-					logVerbose('Determined recommended channels section to be:', sidebarLabel, sidebarSectionsNodes);
-
-					// prefix selector with more specific section
-					selector = ('.side-nav-section[aria-label="' + sidebarLabel + '"] ' + selector);
-				}
-			}
-
-			nodes             = sidebarNode.querySelectorAll(selector);
-			const nodesLength = nodes.length;
-
-			if (nodesLength > 0) {
-
-				logTrace('Found ' + nodesLength + ' nodes in sidebar.', nodes);
-
 			} else {
-
-				logTrace('Unable to find nodes in sidebar. Expected:', selector);
+				// Query the entire sidebar for other modes
+				nodes = Array.from(sidebarNode.querySelectorAll(combinedSelector));
 			}
 
+			const nodesLength = nodes.length;
+			if (nodesLength > 0) {
+				logTrace('Found ' + nodesLength + ' sidebar nodes for mode', mode, nodes);
+			} else {
+				logTrace('Unable to find sidebar nodes for mode', mode, 'using selector:', combinedSelector, 'within:', sidebarNode);
+			}
 		} else {
-
 			logWarn('Unable to find sidebar on the current page. Expected:', sidebarSelector);
 		}
 
-		return nodes;
+		return nodes; // Return the container nodes
 	}
 
 	/**
-	 * Returns item information based on the provided node.
+	 * Returns item information based on the provided container node.
+	 * UPDATE: Expects the main container node now.
 	 */
-	function readItem(node) {
-		logTrace('invoking readItem($)', node);
+	function readItem(containerNode) {
+		logTrace('invoking readItem($)', containerNode);
 
-		if (!node) { return null; }
+		if (!containerNode) { return null; }
 
-		const target = node.getAttribute('data-a-target');
-
-		// category
-		if (/^card\-[0-9]+$/.test(target)) {
-
-			if (node.nodeName === 'ARTICLE') {
-
-				return readChannel(node);
+		// Check if it's a category card container
+		if (containerNode.matches('div.Layout-sc-1xcs6mc-0.ScTowerItem-sc-1sjzzes-2')) {
+			const linkNode = containerNode.querySelector('a[data-a-target="tw-box-art-card-link"]');
+			if (linkNode) {
+				return readCategory(containerNode, linkNode); // Pass both container and link
+			} else {
+				logWarn('Could not find link node within category container:', containerNode);
+				return null;
 			}
-
-			return readCategory(node);
 		}
 
-		// channel
-		if (/^(video\-tower|clips)\-card\-[0-9]+$/.test(target)) {
-
-			return readChannel( node.querySelector('article') );
+		// Check if it's a stream card container
+		if (containerNode.matches('div.Layout-sc-1xcs6mc-0.jCGmCy')) {
+			const linkNode = containerNode.querySelector('a.ScCoreLink-sc-16kq0mq-0.hcWFnG');
+			if (linkNode) {
+				return readChannel(containerNode, linkNode); // Pass both container and link
+			} else {
+				logWarn('Could not find link node within stream container:', containerNode);
+				return null;
+			}
 		}
 
-		switch (target) {
+		// --- TODO: Add checks for VOD/Clip card container selectors here ---
 
-			// channel
-			case 'preview-card-channel-link':
-				return readChannel(node);
-
-			// channel on game page
-			case 'preview-card-image-link':
-				return readChannel(node, false, true);
-
-			// category
-			case 'tw-box-art-card-link':
-				return readCategory(node);
-		}
-
-		return logError('Unable to identify item:', node);
+		// Fallback/Error
+		logError('Unable to identify item type from container node:', containerNode);
+		// Mark as processed to avoid re-checking unknown items repeatedly
+		containerNode.setAttribute('data-uttv-processed', '');
+		return null;
 	}
 
 	/**
-	 * Returns information for a channel item based on the provided node.
+	 * Returns information for a channel item based on the provided container node and link node.
+	 * UPDATE: Updated selectors based on HTML analysis.
 	 */
-	function readChannel(node, findCategory = true, findTags = true) {
-		logTrace('invoking readChannel($, $, $)', node, findCategory, findTags);
+	function readChannel(containerNode, linkNode, findCategory = true, findTags = true) {
+		logTrace('invoking readChannel($, $, $, $)', containerNode, linkNode, findCategory, findTags);
+
+		if (!containerNode || !linkNode) return null;
 
 		let result = {
 			type:     'channels',
 			name:     '',
-			category: '',
+			category: '', // Category usually not on card on category pages
 			tags:     [],
 			title:    '',
 			rerun:    false,
-			node:     node
+			node:     linkNode, // Keep link node as primary reference for hiding attribute? Or container? Let's use container.
+			containerNode: containerNode // Store container node reference explicitly
 		};
 
-		let buffer;
-		let parent = (node.closest('article') ?? node);
-
 		/* BEGIN: title */
-
-			buffer = parent.querySelector('a[data-a-target="preview-card-title-link"], h3[title]');
-
-			if (buffer) {
-
-				result.title = buffer.textContent.trim();
-
-			} else {
-
-				buffer = parent.querySelectorAll('p[title]');
-
-				if (buffer && (buffer.length >= 2)) {
-
-					result.title = buffer[1].textContent.trim();
-
-				} else {
-
-					logVerbose('Unable to determine title of channel.', node);
-				}
+			// Prefer the <p> with title attribute as it seems more consistent
+			const titleNode = containerNode.querySelector('.Layout-sc-1xcs6mc-0.fAVISI p[title]');
+			result.title = titleNode?.title?.trim() ?? '';
+			if (!result.title) {
+				// Fallback to span if p[title] is missing or empty
+				const titleSpan = containerNode.querySelector('.Layout-sc-1xcs6mc-0.iUlBlt span.CoreText-sc-1txzju1-0');
+				result.title = titleSpan?.textContent?.trim() ?? '';
 			}
-
+			if (!result.title) {
+				logWarn('Unable to determine title of channel.', containerNode);
+			}
 		/* END: title */
 
 		/* BEGIN: name */
-
-			buffer = parent.querySelector('[data-a-target="preview-card-channel-link"] p[title]');
-			if (!buffer) {
-				buffer = parent.querySelector('[data-a-target="preview-card-channel-link"] > div');
+			const nameNode = containerNode.querySelector('.Layout-sc-1xcs6mc-0.xxjeD p[title]');
+			result.name = nameNode?.textContent?.trim() ?? '';
+			if (!result.name) {
+				return logError('Unable to determine name of channel.', containerNode); // Name is critical
 			}
-
-			// collab channel @ videos/clips
-			if (buffer && (buffer.querySelector('p[data-a-target]'))) {
-
-				buffer = buffer.firstChild.firstChild;
-			}
-
-			if (buffer) {
-
-				result.name = (buffer.firstChild?.textContent ?? buffer.textContent).trim();
-
-			} else {
-
-				return logError('Unable to determine name of channel.', node);
-			}
-
 		/* END: name */
 
 		/* BEGIN: category */
-
-			buffer = parent.querySelector('a[data-a-target="preview-card-game-link"]');
-
-			if (buffer) {
-
-				result.category = buffer.textContent.trim();
-
-			} else if (findCategory) {
-
-				logVerbose('Unable to determine category of channel.', node);
+			// This selector is likely only present on non-category directory pages
+			const categoryNode = containerNode.querySelector('a[data-a-target="preview-card-game-link"]');
+			result.category = categoryNode?.textContent?.trim() ?? '';
+			if (!result.category && findCategory && currentPageType !== 'game' && currentPageType !== 'categories') {
+				// Only warn if we expect a category and didn't find it
+				logVerbose('Unable to determine category link of channel.', containerNode);
 			}
-
 		/* END: category */
 
 		/* BEGIN: tags */
-
-			buffer = parent.querySelector('.tw-tag[data-a-target]');
-
-			if (buffer) {
-
-				const tags = readTags(buffer.parentNode.parentNode);
-				for (let i = 0; i < tags.length; i++) {
-
-					result.tags.push(
-						tags[i]
-					);
+			if (findTags) {
+				const tagContainer = containerNode.querySelector('.Layout-sc-1xcs6mc-0.fAVISI .InjectLayout-sc-1i43xsx-0'); // Target the container div for tags
+				if (tagContainer) {
+					result.tags = readTags(tagContainer);
+				} else {
+					logVerbose('Unable to determine tag container for channel.', containerNode);
 				}
-
-			} else if (findTags) {
-
-				logVerbose('Unable to determine tags of channel.', node);
 			}
-
 		/* END: tags */
 
-		// rerun
-		result.rerun = (node.querySelector('.stream-type-indicator--rerun') !== null);
+		// rerun - Selector needs verification from Rerun Card HTML
+		result.rerun = (containerNode.querySelector('.stream-type-indicator--rerun') !== null); // Keep existing check for now
 
+		// Add near the end of readChannel, before the return statement
+		logVerbose(`[readChannel] Extracted Data: Name='${result.name}', Title='${result.title}', Category='${result.category}', Tags='${result.tags?.map(t=>t.name).join(',')}', Rerun='${result.rerun}'`);
 		return result;
 	}
 
 	/**
-	 * Returns information for a category item based on the provided node.
+	 * Returns information for a category item based on the provided container node and link node.
+	 * UPDATE: Updated selectors based on HTML analysis.
 	 */
-	function readCategory(node, findTags = true) {
-		logTrace('invoking readCategory($, $)', node, findTags);
+	function readCategory(containerNode, linkNode, findTags = true) {
+		logTrace('invoking readCategory($, $, $)', containerNode, linkNode, findTags);
+
+		if (!containerNode || !linkNode) return null;
 
 		let result = {
 			type:     'categories',
 			name:     '',
 			category: '',
 			tags:     [],
-			title:    '',
-			rerun:    false,
-			node:     node
+			title:    '', // Categories don't have stream titles
+			rerun:    false, // Categories aren't reruns
+			node:     linkNode, // Use link node as primary reference
+			containerNode: containerNode // Store container node reference
 		};
 
-		let buffer;
-
 		/* BEGIN: name */
-
-			buffer = node.closest('.game-card');
-			if (buffer !== null) {
-
-				buffer = buffer.querySelector('h2');
-				if (buffer !== null) {
-
-					result.name     = buffer.textContent;
-					result.category = result.name;
-
-				} else {
-
-					return logError('Unable to determine name of category.', node);
-				}
-
-			} else {
-
-				return logError('Unable to determine name of category.', node);
+			const nameNode = containerNode.querySelector('article h3[title]'); // Target h3 inside article
+			result.name = nameNode?.textContent?.trim() ?? '';
+			result.category = result.name; // For categories, name and category are the same
+			if (!result.name) {
+				return logError('Unable to determine name of category.', containerNode);
 			}
-
 		/* END: name */
 
 		/* BEGIN: tags */
-
-			buffer = node;
-
-			if (
-				buffer.parentNode &&
-				buffer.parentNode.parentNode &&
-				buffer.parentNode.parentNode.nextSibling
-			) {
-
-				result.tags = [];
-
-				const tags = readTags(buffer.parentNode.parentNode.nextSibling);
-				for (let i = 0; i < tags.length; i++) {
-
-					result.tags.push(
-						tags[i]
-					);
+			if (findTags) {
+				const tagContainer = containerNode.querySelector('article .Layout-sc-1xcs6mc-0.fLNVxt'); // Target specific tag container div
+				if (tagContainer) {
+					result.tags = readTags(tagContainer);
+				} else {
+					logVerbose('Unable to determine tag container for category.', containerNode);
 				}
-
-			} else if (findTags) {
-
-				logVerbose('Unable to determine tags of category.', node);
 			}
-
 		/* END: tags */
 
 		return result;
 	}
 
 	/**
-	 * Returns all tags found in the provided node.
+	 * Returns all tags found in the provided tag container node.
+	 * UPDATE: Updated selector for tag buttons.
 	 */
-	function readTags(node) {
-		logTrace('invoking readTags($)', node);
+	function readTags(tagContainerNode) {
+		logTrace('invoking readTags($)', tagContainerNode);
 
 		let tags = [];
+		if (!tagContainerNode) {
+			logVerbose('No tag container node provided to readTags.');
+			return tags;
+		}
 
-		if (!node) { return tags; }
-
-		const tagsSelector = '[data-a-target]';
-		const nodes        = node.querySelectorAll(tagsSelector);
-		const nodesLength  = nodes.length;
+		const tagsSelector = 'button.tw-tag[data-a-target]'; // Select the button tags
+		const tagNodes     = tagContainerNode.querySelectorAll(tagsSelector);
+		const nodesLength  = tagNodes.length;
 
 		if (nodesLength > 0) {
-
+			logTrace('Found', nodesLength, 'tag nodes in container:', tagContainerNode);
 			for (let i = 0; i < nodesLength; i++) {
-
-				const tagNode = nodes[i];
+				const tagNode = tagNodes[i];
 				const tagName = tagNode.getAttribute('data-a-target');
 
-				if (!tagName) { continue; }
+				if (!tagName) {
+					logWarn('Tag node missing data-a-target:', tagNode);
+					continue;
+				}
 
-				// ignore meta targets
-				if (tagName.indexOf('preview-card') >= 0) { continue; }
+				// Optional: Ignore meta targets if necessary (though unlikely within this container)
+				// if (tagName.indexOf('preview-card') >= 0) { continue; }
 
 				tags.push({
 					name: tagName,
-					node: tagNode
+					node: tagNode // Keep reference to the button itself
 				});
 			}
-
 		} else {
-
-			logInfo('Unable to find any tags. Expected:', tagsSelector);
+			logTrace('Unable to find any tags in container. Expected selector:', tagsSelector, 'within:', tagContainerNode);
 		}
-
+		//logVerbose('Extracted tags:', tags.map(t => t.name));
+		logVerbose('Extracted tags from container:', tags.map(t => t.name), tagContainerNode);
 		return tags;
 	}
 
 	/**
-	 * Returns sidebar item information based on the provided node.
+	 * Returns sidebar item information based on the provided container node.
+	 * UPDATE: Checks sidebar state first, then applies appropriate logic.
 	 */
-	function readSidebarItem(node, findCategory = false) {
-		logTrace('invoking readSidebarItem($, $)', node, findCategory);
+	function readSidebarItem(containerNode, findCategory = false) {
+		logTrace('invoking readSidebarItem($, $)', containerNode, findCategory);
 
-		let result = {
-			type:     'channels',
-			name:     '',
-			category: '',
-			tags:     [],
-			title:    '',
-			rerun:    false,
-			node:     node
-		};
+		if (!containerNode) return null;
 
-		let buffer;
+		// Find the main sidebar nav element to check its state
+		const sidebarNav = document.querySelector('nav#side-nav'); // Assuming side-nav ID is reliable
+		const isCollapsed = sidebarNav ? sidebarNav.closest('.side-nav--collapsed') !== null : false; // Check if the parent div has the collapsed class
 
-		/* BEGIN: name */
+		logVerbose(`Reading sidebar item. Collapsed state: ${isCollapsed}`);
 
-			// collapsed sidebar
-			if (node.classList.contains('side-nav-card')) {
+		if (isCollapsed) {
+			// --- Handle Collapsed Sidebar ---
+			// Directly call or implement collapsed logic. Assumes containerNode is the 'a' or contains necessary info.
+			return readCollapsedSidebarItem(containerNode); // Pass the container
 
-				// automatically collapsed
-				buffer = node.querySelector('.tw-avatar');
+		} else {
+			// --- Handle Expanded Sidebar ---
+			const linkNode = containerNode.querySelector('a.side-nav-card__link'); // Find the main link inside the container
 
-				if (buffer !== null) {
+			if (!linkNode) {
+				// If link is not found even in expanded view, log error and exit.
+				logError('Could not find primary link node within expanded sidebar container:', containerNode);
+				return null;
+			}
 
-					buffer = buffer.getAttribute('aria-label');
+			let result = {
+				type: 'channels',
+				name: '',
+				category: '',
+				tags: [], // Tags usually not shown in sidebar
+				title: '', // Titles not shown in sidebar
+				rerun: false,
+				node: linkNode, // Reference the link node
+				containerNode: containerNode // Reference the container
+			};
 
-					if (buffer !== null) {
+			/* BEGIN: name - Expanded View */
+			// Combined selector for robustness, prioritizing p[title] inside data-a-target first
+			const nameNode = linkNode.querySelector('[data-a-target="side-nav-title"] p[title], [data-a-target="side-nav-card-metadata"] p[title]');
+			result.name = nameNode?.textContent?.trim() ?? '';
+			if (!result.name) {
+				// It's unusual for name to be missing in expanded view, log as warning.
+				logWarn('Could not determine name for expanded sidebar item:', containerNode);
+				// We might still be able to get category, so don't return null immediately.
+			}
+			/* END: name - Expanded View */
 
-						result.name = buffer;
+			/* BEGIN: category - Expanded View */
+			const categoryNode = linkNode.querySelector('[data-a-target="side-nav-game-title"] p'); // Target the paragraph inside
+			result.category = categoryNode?.textContent?.trim() ?? '';
+			// No warning if category is empty, it's expected for offline channels etc.
+			/* END: category - Expanded View */
 
-					} else {
+			// Rerun check - Needs verification if applicable to sidebar
+			result.rerun = (linkNode.querySelector('.tw-svg__asset--videorerun') !== null); // Keep existing check
 
-						// manually collapsed
-						buffer = node.querySelector('.tw-image-avatar');
+			// Return null only if the essential name is missing
+			if (!result.name) {
+				logError('Expanded sidebar item missing critical name information.', containerNode);
+				return null;
+			}
 
-						if ((buffer !== null) && (buffer.alt)) {
+			return result;
+		}
+	}
 
-							result.name = buffer.alt;
+	// --- Keep the existing readCollapsedSidebarItem helper ---
+	/** Helper for collapsed sidebar logic - Needs HTML verification */
+	function readCollapsedSidebarItem(node) {
+		logTrace('invoking readCollapsedSidebarItem($)', node);
+		// Assumes 'node' is the 'div.side-nav-card' container for the collapsed item
+		let name = '';
+		let linkHref = '#'; // Default href
 
-						} else {
+		// In collapsed view, the main link might be the container itself or an inner 'a' without the specific class
+		const collapsedLink = node.matches('a') ? node : node.querySelector('a'); // Check if container is link, else find first link within
 
-							return logError('Unable to determine name of channel.', node);
-						}
+		if (collapsedLink) {
+			linkHref = collapsedLink.getAttribute('href') || '#';
+			// Try getting name from aria-label on the link first
+			name = collapsedLink.getAttribute('aria-label');
+			if (!name) {
+				// Fallback: Look for aria-label on avatar *inside* the link
+				const avatarNode = collapsedLink.querySelector('.tw-avatar[aria-label]');
+				if (avatarNode) {
+					name = avatarNode.getAttribute('aria-label');
+				} else {
+					// Fallback: Look for alt text on image *inside* the link
+					const imageNode = collapsedLink.querySelector('.tw-image-avatar[alt]');
+					if (imageNode) {
+						name = imageNode.getAttribute('alt');
 					}
-
-				} else {
-
-					return logError('Unable to determine name of channel.', node);
 				}
+			}
+			// Further fallback if aria-label/alt fails: extract from href? Less reliable.
+			if (!name && linkHref !== '#') {
+				name = linkHref.substring(1); // Get text after "/" as a last resort
+				logVerbose('Collapsed sidebar item name extracted from href:', name);
+			}
 
-			// expanded sidebar
+		} else {
+			logWarn('Could not find link element within collapsed sidebar container:', node);
+			// Attempt extraction directly from container's children if no link found
+			const avatarNode = node.querySelector('.tw-avatar[aria-label]');
+			if (avatarNode) {
+				name = avatarNode.getAttribute('aria-label');
 			} else {
-
-				buffer = node.querySelector('[data-a-target="side-nav-title"] p[title], [data-a-target="side-nav-card-metadata"] p[title]');
-
-				if (buffer) {
-
-					result.name = buffer.textContent;
-
-				} else {
-
-					return logError('Unable to determine name of channel.', node);
+				const imageNode = node.querySelector('.tw-image-avatar[alt]');
+				if (imageNode) {
+					name = imageNode.getAttribute('alt');
 				}
 			}
+		}
 
-		/* END: name */
+		if (!name) {
+			return logError('Unable to determine name of collapsed sidebar channel.', node);
+		}
 
-		/* BEGIN: category */
+		// Clean up potential extra text like "Use the Right Arrow Key..." if present in aria-label
+		name = name.replace(/Use the Right Arrow Key to show more information for /i, '').replace(/\./, '').trim();
 
-			buffer = node.querySelector('[data-a-target="side-nav-game-title"]');
-
-			if (buffer !== null) {
-
-				result.category = buffer.textContent;
-
-			} else if (findCategory) {
-
-				logVerbose('Unable to determine category of channel.', node);
-			}
-
-		/* END: category */
-
-		// rerun
-		result.rerun = (node.querySelector('.tw-svg__asset--videorerun') !== null);
-
-		return result;
+		return {
+			type: 'channels',
+			name: name,
+			category: '', // No category in collapsed view
+			tags: [],
+			title: '',
+			rerun: false,
+			node: collapsedLink || node, // Reference the link if found, else the container
+			containerNode: node
+		};
 	}
 
 	/**
 	 * Returns if the specified item is blacklisted.
 	 */
 	function isBlacklistedItem(item) {
-		logTrace('invoking isBlacklistedItem($)', item);
+		//logTrace('invoking isBlacklistedItem($)', item); // Keep trace optional
+
+		if (!item || typeof item !== 'object') {
+			logError('[isBlacklistedItem] Invalid item passed:', item);
+			return false;
+		}
+
+		const itemIdentifier = item.name || item.category || item.title || 'Unknown Item';
+		logVerbose(`[isBlacklistedItem] Checking: Type='${item.type}', Name='${item.name}', Category='${item.category}', Title='${item.title}', Rerun='${item.rerun}', Tags='${item.tags?.map(t=>t.name).join(',')}'`);
 
 		// blacklisted for being a rerun
-		if (hideReruns && (item.rerun === true)) { return true; }
-
-		if (storedBlacklistedItems[item.type] === undefined) { return false; }
-
-		// blacklisted by name
-		if (matchTerms(item.name, item.type)) {
-
-			logTrace('blacklisted by name:', item.name);
+		if (hideReruns && (item.rerun === true)) {
+			logInfo(`[isBlacklistedItem] Blacklisted: Rerun - ${itemIdentifier}`);
 			return true;
 		}
 
-		// blacklisted by category
-		if (matchTerms(item.category, 'categories')) {
-
-			logTrace('blacklisted by category:', item.category);
-			return true;
-		}
-
-		// blacklisted by tag
-		const tagsLength = item.tags.length;
-		for (let i = 0; i < tagsLength; i++) {
-
-			if (matchTerms(item.tags[i].name, 'tags')) {
-
-				logTrace('blacklisted by tag:', item.tags[i].name);
+		// Check item type exists in blacklist cache
+		if (storedBlacklistedItems[item.type] === undefined && item.type !== 'categories') { // Allow category check even if item type isn't 'categories'
+			logTrace('[isBlacklistedItem] Type', item.type, 'not directly in blacklist. Checking Category/Tags/Title...');
+			// Check category only if item isn't already a category type
+			if (item.type !== 'categories' && item.category && matchTerms(item.category, 'categories')) {
+				logInfo(`[isBlacklistedItem] Blacklisted: Category Match on '${item.category}' for item ${itemIdentifier}`);
 				return true;
+			}
+			// Check tags
+			if (item.tags && item.tags.length > 0) {
+				for (const tag of item.tags) {
+					if (matchTerms(tag.name, 'tags')) {
+						logInfo(`[isBlacklistedItem] Blacklisted: Tag Match on '${tag.name}' for item ${itemIdentifier}`);
+						return true;
+					}
+				}
+			}
+			// Check title
+			if (item.title && matchTerms(item.title, 'titles')) {
+				logInfo(`[isBlacklistedItem] Blacklisted: Title Match on '${item.title}' for item ${itemIdentifier}`);
+				return true;
+			}
+			logVerbose('[isBlacklistedItem] Not blacklisted (Type not relevant or no Category/Tag/Title match).');
+			return false; // No relevant blacklist entries found for this item type
+		}
+
+		// Blacklisted by Name (Channel Name or Category Name)
+		// Use item.name for channels, item.category for categories (they are the same value)
+		const nameToCheck = item.type === 'categories' ? item.category : item.name;
+		if (nameToCheck && matchTerms(nameToCheck, item.type)) {
+			logInfo(`[isBlacklistedItem] Blacklisted: Name Match on '${nameToCheck}' (Type: ${item.type})`);
+			return true;
+		}
+
+		// Blacklisted by Category (specifically for Channel items)
+		if (item.type === 'channels' && item.category && matchTerms(item.category, 'categories')) {
+			logInfo(`[isBlacklistedItem] Blacklisted: Category Match on '${item.category}' for channel ${item.name}`);
+			return true;
+		}
+
+		// Blacklisted by Tag
+		if (item.tags && item.tags.length > 0) {
+			for (const tag of item.tags) {
+				if (matchTerms(tag.name, 'tags')) {
+					logInfo(`[isBlacklistedItem] Blacklisted: Tag Match on '${tag.name}' for item ${itemIdentifier}`);
+					return true;
+				}
 			}
 		}
 
-		// blacklisted by title
-		if (matchTerms(item.title, 'titles')) {
-
-			logTrace('blacklisted by title:', item.title);
+		// Blacklisted by Title
+		if (item.title && matchTerms(item.title, 'titles')) {
+			logInfo(`[isBlacklistedItem] Blacklisted: Title Match on '${item.title}' for item ${itemIdentifier}`);
 			return true;
 		}
 
+		logVerbose(`[isBlacklistedItem] Not blacklisted: ${itemIdentifier}`);
 		return false;
 	}
 
@@ -1270,44 +1219,46 @@
 	 * Returns if the specified term matches against the provided blacklist.
 	 */
 	function matchTerms(term, type) {
-
-		if (typeof term !== 'string') { return false; }
-		if (term.length === 0)        { return false; }
+		// Added early exit for invalid type
+		if (!term || typeof term !== 'string' || term.length === 0 || !storedBlacklistedItems[type]) {
+			return false;
+		}
 
 		const termL = normalizeCase(term);
 
-		// match against map
-		if (
-			(storedBlacklistedItems[type][term]  !== undefined) ||
-			(storedBlacklistedItems[type][termL] !== undefined)
-		) {
+		// Match against map (primary check)
+		if (storedBlacklistedItems[type][term] !== undefined || storedBlacklistedItems[type][termL] !== undefined) {
+			//logVerbose('Match found in map for:', term, 'Type:', type);
 			return true;
 		}
 
-		// check for exact match
-		if (cacheExactTerms[type] !== undefined) {
-
+		// Check for exact match cache
+		if (cacheExactTerms[type]) {
 			for (const exactTerm of cacheExactTerms[type]) {
-
-				if (term === exactTerm) { return true; }
+				if (term === exactTerm) {
+					//logVerbose('Exact match found:', term, 'vs', exactTerm);
+					return true;
+				}
 			}
 		}
 
-		// check for loose match
-		if (cacheLooseTerms[type] !== undefined) {
-
+		// Check for loose match cache
+		if (cacheLooseTerms[type]) {
 			for (const looseTerm of cacheLooseTerms[type]) {
-
-				if (termL.indexOf(looseTerm) >= 0) { return true; }
+				if (termL.includes(looseTerm)) { // Use includes for substring check
+					//logVerbose('Loose match found:', termL, 'contains', looseTerm);
+					return true;
+				}
 			}
 		}
 
-		// check for regular expression match
-		if (cacheRegExpTerms[type] !== undefined) {
-
+		// Check for regular expression match cache
+		if (cacheRegExpTerms[type]) {
 			for (const regexp of cacheRegExpTerms[type]) {
-
-				if (regexp.test(term) === true) { return true; }
+				if (regexp.test(term)) {
+					//logVerbose('RegExp match found:', term, 'matches', regexp);
+					return true;
+				}
 			}
 		}
 
@@ -1316,236 +1267,82 @@
 
 	/**
 	 * Removes the provided item node. Returns if the node could be removed.
+	 * UPDATE: Uses classList.add instead of inline style.
 	 */
 	function removeDirectoryItem(item) {
-		logTrace('invoking removeDirectoryItem($)', item);
+		//logTrace('invoking removeDirectoryItem($)', item); // Optional trace
 
-		const topNodes = [];
-		let topNode    = item.node;
+		const container = item.containerNode; // Use the container node identified earlier
+		const itemIdentifier = item.name || item.category || item.title || 'Unknown Item';
 
-		switch (item.type) {
-
-			case 'categories':
-
-				// traverse through the DOM and hide the topmost node
-				while (true) {
-
-					if (
-						(!topNode) ||
-						(topNode === document.documentElement)
-					) {
-						if (topNodes.length > 0) {
-
-							item.node.setAttribute('data-uttv-hidden', '');
-
-							topNodes[topNodes.length - 1].style.cssText += '; display: none !important;';
-							return true;
-
-						} else {
-
-							logError('Could not find the expected parent node to remove category item:', item);
-							break;
-						}
-					}
-
-					// order by vague to most specific selector
-					if (
-						topNode.classList.contains('tw-transition') ||
-						(
-							(topNode.getAttribute('data-target') !== null) &&
-							(
-								(typeof topNode.getAttribute('style') === 'string') &&
-								(topNode.getAttribute('style').indexOf('order:') === 0)
-							)
-						)
-					) {
-						// matching node
-						topNodes.push(topNode);
-
-					} else if (
-						(topNode.getAttribute('data-a-target') === 'shelf-card')
-					) {
-						// parent node of match
-						topNodes.push(topNode.parentNode);
-					}
-
-					// keep looking
-					topNode = topNode.parentNode;
-				}
-
-			break;
-
-			case 'channels':
-
-				// traverse through the DOM and hide the topmost node
-				while (true) {
-
-					if (
-						(!topNode) ||
-						(topNode === document.documentElement)
-					) {
-						if (topNodes.length > 0) {
-
-							item.node.setAttribute('data-uttv-hidden', '');
-
-							topNodes[topNodes.length - 1].style.cssText += '; display: none !important;';
-							return true;
-
-						} else {
-
-							logError('Could not find the expected parent node to remove channel item:', item);
-							break;
-						}
-					}
-
-					const aTarget = (topNode.getAttribute('data-a-target') ?? '');
-
-					// order by vague to most specific selector
-					if (
-						topNode.classList.contains('tw-transition') ||
-						topNode.classList.contains('stream-thumbnail') ||
-						(aTarget.indexOf('video-tower-card') >= 0) ||
-						(aTarget.indexOf('clips-card') >= 0) ||
-						(
-							(topNode.getAttribute('data-target') !== null) &&
-							(
-								(typeof topNode.getAttribute('style') === 'string') &&
-								(topNode.getAttribute('style').indexOf('order:') === 0)
-							)
-						)
-					) {
-						// matching node
-						topNodes.push(topNode);
-
-					} else if (
-						topNode.classList.contains('live-channel-card') ||
-						(aTarget === 'shelf-card') ||
-						(
-							(topNode.getAttribute('href') !== null) &&
-							(topNode.getAttribute('tabindex') === '-1')
-						)
-					) {
-						// parent node of match
-						switch (currentPageType) {
-
-							case 'explore':
-								topNodes.push(topNode.parentNode.parentNode);
-							break;
-
-							default:
-								topNodes.push(topNode.parentNode);
-							break;
-						}
-
-					} else if (
-						(aTarget.indexOf('followed-vod') >= 0)
-					) {
-						// parent's parent node of match
-						topNodes.push(topNode.parentNode.parentNode);
-
-					} else if (
-						(topNode.nodeName === 'ARTICLE') &&
-						(aTarget.indexOf('card-') >= 0)
-					) {
-
-						// parent's parent node of match
-						switch (currentPageType) {
-
-							case 'collection':
-								topNodes.push(topNode.parentNode.parentNode.parentNode.parentNode);
-							break;
-
-							default:
-								topNodes.push(topNode.parentNode.parentNode.parentNode);
-							break;
-						}
-					}
-
-					// keep looking
-					topNode = topNode.parentNode;
-				}
-
-			break;
-
-			default:
-
-				logError('Unable to remove directory item, because its type is unhandled:', item);
-
-			break;
+		if (!container) {
+			logError('[removeDirectoryItem] Cannot remove directory item, containerNode is missing:', item);
+			return false;
 		}
+		logInfo(`[removeDirectoryItem] Attempting to hide container for: ${itemIdentifier}`, container);
+		// *** DEBUG: Log classes before adding ***
+		logVerbose('[removeDirectoryItem] Container classes BEFORE add:', container.className);
 
-		return false;
+		try {
+			// Mark the original node (link/article) as hidden for potential re-checks
+			// Use optional chaining for safety
+			item.node?.setAttribute('data-uttv-hidden', '');
+			container.setAttribute('data-uttv-hidden', ''); // Ensure container is also marked
+
+			// Hide the main container by adding the CSS class
+			logVerbose('[removeDirectoryItem] Adding .uttv-hidden-item class to container.');
+			container.classList.add('uttv-hidden-item');
+			// *** DEBUG: Log classes AFTER adding ***
+			logVerbose('[removeDirectoryItem] Container classes AFTER add:', container.className);
+
+			// *** DEBUG: Verify hiding after applying class ***
+			const computedStyle = window.getComputedStyle(container).display;
+			if (computedStyle === 'none') {
+				logInfo(`[removeDirectoryItem] Hide successful for: ${itemIdentifier} (via class)`);
+			} else {
+				logError(`[removeDirectoryItem] Hide FAILED for: ${itemIdentifier} (Computed style: ${computedStyle} despite adding class)`);
+				// Log parent display style too, maybe it's affecting children?
+				if (container.parentNode) {
+					logVerbose(`[removeDirectoryItem] Parent computed display: ${window.getComputedStyle(container.parentNode).display}`);
+				}
+			}
+			return true; // Return true even if computedStyle check fails, as the class was added.
+		} catch (error) {
+			logError(`[removeDirectoryItem] Error hiding container for: ${itemIdentifier}`, error, item);
+			return false;
+		}
 	}
 
 	/**
 	 * Removes the provided sidebar item node. Returns if the node could be removed.
+	 * UPDATE: Targets the container node directly.
 	 */
 	function removeSidebarItem(item) {
 		logTrace('invoking removeSidebarItem($)', item);
 
-		const topNodes = [];
-		let topNode    = item.node;
+		const container = item.containerNode; // Use the container node identified earlier
 
-		switch (item.type) {
-
-			case 'channels':
-
-				// traverse through the DOM and hide the topmost node
-				while (true) {
-
-					if (
-						(!topNode) ||
-						(topNode === document.documentElement)
-					) {
-						if (topNodes.length > 0) {
-
-							item.node.setAttribute('data-uttv-hidden', '');
-
-							const nodeToRemove = topNodes[topNodes.length - 1];
-
-							if (nodeToRemove.classList.contains('side-nav-card')) {
-
-								nodeToRemove.parentNode.parentNode.style.cssText += '; display: none !important;';
-
-							} else {
-
-								nodeToRemove.style.cssText += '; display: none !important;';
-							}
-
-							return true;
-
-						} else {
-
-							logError('Could not find the expected parent node to remove sidebar channel item:', item);
-							break;
-						}
-					}
-
-					// order by vague to most specific selector
-					if (
-						topNode.classList.contains('side-nav-card') ||
-						(
-							topNode.classList.contains('tw-transition') &&
-							topNode.classList.contains('tw-transition--duration-medium') &&
-							topNode.classList.contains('tw-transition__scale-over')
-						)
-					) {
-						topNodes.push(topNode);
-					}
-
-					topNode = topNode.parentNode;
-				}
-
-			break;
-
-			default:
-
-				logError('Unable to remove sidebar item, because its type is unhandled:', item);
-
-			break;
+		if (!container) {
+			logError('Cannot remove sidebar item, containerNode is missing:', item);
+			return false;
 		}
 
-		return false;
+		try {
+			// Mark the original node (link/article) as hidden for potential re-checks
+			if (item.node) {
+				item.node.setAttribute('data-uttv-hidden', '');
+			} else {
+				container.setAttribute('data-uttv-hidden', ''); // Mark container if primary node missing
+			}
+
+			// Hide the main container card div
+			container.style.display = 'none !important;';
+			logVerbose('Successfully hid sidebar item container:', container);
+			return true;
+		} catch (error) {
+			logError('Error removing sidebar item container:', error, item);
+			return false;
+		}
 	}
 
 /* END: item operations */
@@ -1563,165 +1360,273 @@
 		for (let i = 0; i < itemsLength; i++) {
 
 			const item = items[i];
+			if (!item || !item.containerNode) {
+				logWarn('Skipping button attachment for invalid item:', item);
+				continue;
+			};
 
+			// Attach to Card Container
 			attachHideButtonToCard(item);
-			attachHideButtonsToTags(item);
+
+			// Attach to Tags within the container
+			// Find the correct tag container based on item type
+			let tagContainerNode = null;
+			if (item.type === 'channels') {
+				tagContainerNode = item.containerNode.querySelector('.Layout-sc-1xcs6mc-0.fAVISI .InjectLayout-sc-1i43xsx-0');
+			} else if (item.type === 'categories') {
+				tagContainerNode = item.containerNode.querySelector('article .Layout-sc-1xcs6mc-0.fLNVxt');
+			}
+			// --- TODO: Add logic for VOD/Clip tag containers ---
+
+			if (tagContainerNode && item.tags && item.tags.length > 0) {
+				attachHideButtonsToTags(item.tags, tagContainerNode); // Pass tags array and container
+			}
 		}
 	}
 
 	/**
-	 * Attaches a hide button to the provided card node.
+	 * Attaches a hide button to the provided card container node.
+	 * UPDATE: Appends to the container node. Listener now handles immediate hide + verbose logging.
 	 */
 	function attachHideButtonToCard(item) {
-		logTrace('invoking attachHideButtonToCard($)', item);
+		//logTrace('invoking attachHideButtonToCard($)', item); // Keep trace for less noise if needed
 
-		const attachedKey = 'data-uttv-card-attached';
-
-		// prevent attaching the button more than once
-		if (item.node.getAttribute(attachedKey) !== null) {
-
-			return logVerbose('Hide button already attached to card.', item);
+		const containerNode = item.containerNode;
+		if (!containerNode) {
+			logError('[attachHideButtonToCard] Cannot attach card button, containerNode missing for item:', item);
+			return;
 		}
 
-		// mark item as being processed
-		item.node.setAttribute(attachedKey, '');
+		const attachedKey = 'data-uttv-card-button-attached';
+
+		// Prevent attaching the button more than once
+		if (containerNode.getAttribute(attachedKey) !== null) {
+			//logVerbose('[attachHideButtonToCard] Hide button already attached to card container.', containerNode);
+			return;
+		}
+
+		// Mark item as being processed for button attachment
+		containerNode.setAttribute(attachedKey, '');
+		logVerbose('[attachHideButtonToCard] Attaching button to container:', containerNode, 'for item:', item.name || item.category);
 
 		/* BEGIN: build hide button */
-
 			let hideItem = document.createElement('div');
+			let label = '';
+			let itemIdentifier = item.name || item.category || item.title || 'Unknown Item'; // Use best available identifier
 
 			switch (item.type) {
-
 				case 'categories':
 					hideItem.className   = 'uttv-hide-item uttv-category';
-					hideItem.textContent = 'X';
-					hideItem.title       = chrome.i18n.getMessage('label_HideCategory');
+					label = chrome.i18n.getMessage('label_HideCategory');
+					itemIdentifier = item.category; // Prefer category name for categories
 				break;
-
 				case 'channels':
-
 					hideItem.className   = 'uttv-hide-item uttv-channel';
-					hideItem.textContent = 'X';
-					hideItem.title       = chrome.i18n.getMessage('label_HideChannel');
-
-					// offset the "X" button on live channels when FFZ is used (to prevent overlap with stream runtime)
-					if ( usingFFZ() ) {
-
-						const isLive = /^\/[^\/]+\/?$/.test(
-							item.node.getAttribute('href')
-						);
-
-						if (isLive) {
-
-							hideItem.className += ' uttv-ffz';
-						}
+					label = chrome.i18n.getMessage('label_HideChannel');
+					itemIdentifier = item.name; // Prefer channel name for channels
+					if ( usingFFZ() && item.node?.getAttribute('href') && /^\/[^\/]+\/?$/.test(item.node.getAttribute('href')) ) {
+						hideItem.className += ' uttv-ffz';
 					}
 				break;
-
+				// --- TODO: Add cases for VOD/Clip types ---
 				default:
-
-					return logError('Unable to attach hide button to card, because the item type is unhandled:', item);
+					logError('[attachHideButtonToCard] Unable to create hide button for card, unknown item type:', item.type);
+					return; // Don't attach button for unknown types
 			}
+
+			hideItem.textContent = 'X';
+			hideItem.title       = label + ' (' + itemIdentifier + ')';
 
 			if (renderButtons === false) {
-
 				hideItem.classList.add('uttv-hidden');
 			}
-
 		/* END: build hide button */
 
-		// attach action listener with backreference to item
-		hideItem.setAttribute('data-uttv-type', item.type);
-		hideItem.setAttribute('data-uttv-name', item.name);
-		hideItem.addEventListener('click', async(event) => {
+		// Store necessary info directly on the button
+		const itemType = item.type;
+		const itemName = itemIdentifier; // Use the determined identifier
+		hideItem.setAttribute('data-uttv-type', itemType);
+		hideItem.setAttribute('data-uttv-name', itemName);
 
+		// --- MODIFICATION START ---
+		hideItem.addEventListener('click', async (event) => {
 			// cancel regular click event on card
 			event.preventDefault();
 			event.stopPropagation();
 
-			await onHideItem(item);
-		});
+			const buttonClicked = event.currentTarget;
+			// *** DEBUG: Verify the button and its parent ***
+			logInfo('[Hide Card Click] Button clicked:', buttonClicked);
+			let containerToHide = buttonClicked.parentNode; // Assume direct parent initially
+			logInfo('[Hide Card Click] Initial parent node:', containerToHide);
 
-		item.node.parentNode.style.position = 'relative';
-		item.node.parentNode.appendChild(hideItem);
+			// *** DEBUG: Verify container has expected class ***
+			const expectedContainerSelector = '.Layout-sc-1xcs6mc-0.jCGmCy, .Layout-sc-1xcs6mc-0.ScTowerItem-sc-1sjzzes-2'; // Stream or Category container
+			let isCorrectContainer = containerToHide && containerToHide.matches && containerToHide.matches(expectedContainerSelector);
+
+			if (!isCorrectContainer) {
+				logWarn('[Hide Card Click] Button parent is NOT the expected container node! Traversing up...');
+				// Attempt to find the correct container by traversing up, max 3 levels
+				let potentialContainer = containerToHide?.parentNode;
+				let levels = 0;
+				while (potentialContainer && levels < 3) {
+					logVerbose('[Hide Card Click] Traversing up to check:', potentialContainer);
+					if (potentialContainer.matches && potentialContainer.matches(expectedContainerSelector)) {
+						logWarn('[Hide Card Click] Found correct container via traversal:', potentialContainer);
+						containerToHide = potentialContainer;
+						isCorrectContainer = true;
+						break;
+					}
+					potentialContainer = potentialContainer.parentNode;
+					levels++;
+				}
+				if (!isCorrectContainer) {
+					logError('[Hide Card Click] FAILED to find correct container node via traversal. Aborting immediate hide.');
+					// Still proceed with blacklist update, but visual hide failed.
+					const type = buttonClicked.getAttribute('data-uttv-type');
+					const name = buttonClicked.getAttribute('data-uttv-name');
+					if (type && name) {
+						await onHideItem({ type: type, name: name });
+					}
+					return;
+				}
+			}
+
+			const type = buttonClicked.getAttribute('data-uttv-type');
+			const name = buttonClicked.getAttribute('data-uttv-name');
+
+			if (!type || !name) {
+				logError("[Hide Card Click] Missing data-uttv-type or data-uttv-name on button.", buttonClicked);
+				return;
+			}
+
+			logInfo(`[Hide Card Click] Attempting to hide: Type='${type}', Name='${name}'`);
+			logInfo('[Hide Card Click] Target container for hiding:', containerToHide);
+
+			// 1. Immediately hide the visual element
+			try {
+				logVerbose("[Hide Card Click] Adding .uttv-hidden-item class to container.");
+				containerToHide.classList.add('uttv-hidden-item'); // Use classList.add
+				logVerbose("[Hide Card Click] Setting data-uttv-hidden on container.");
+				containerToHide.setAttribute('data-uttv-hidden', ''); // Mark as hidden
+
+				// *** DEBUG: Check if style was applied ***
+				const computedStyle = window.getComputedStyle(containerToHide).display;
+				if (computedStyle === 'none') {
+					logInfo("[Hide Card Click] Immediate hide successful (computed style is 'none' via class).");
+				} else {
+					logError("[Hide Card Click] Immediate hide FAILED (computed style is NOT 'none', it is: " + computedStyle + "). Class might be overridden.", containerToHide);
+				}
+
+				// Also mark the original primary node if it exists
+				const primaryNode = containerToHide.querySelector('a.ScCoreLink-sc-16kq0mq-0.hcWFnG, a[data-a-target="tw-box-art-card-link"]');
+				if (primaryNode) {
+					logVerbose("[Hide Card Click] Setting data-uttv-hidden on primary node:", primaryNode);
+					primaryNode.setAttribute('data-uttv-hidden', '');
+				} else {
+					logWarn("[Hide Card Click] Could not find primary node within container to mark as hidden.");
+				}
+
+			} catch(e) {
+				logError("[Hide Card Click] Error during immediate hide:", e, containerToHide);
+			}
+
+			// 2. Proceed with blacklist update in the background
+			logVerbose("[Hide Card Click] Calling onHideItem for blacklist update.");
+			await onHideItem({ type: type, name: name }); // Pass the extracted data
+		});
+		// --- MODIFICATION END ---
+
+		// Ensure container is capable of absolute positioning
+		containerNode.style.position = 'relative'; // Make sure this is applied
+		containerNode.appendChild(hideItem);
+		//logVerbose('[attachHideButtonToCard] Attached card hide button to container:', containerNode); // Keep less verbose if needed
 
 		return hideItem;
 	}
 
 	/**
-	 * Attaches a hide button to each tag node in the provided node.
+	 * Attaches a hide button to each tag node within the provided container.
+	 * UPDATE: Accepts tag array and container, attaches to tag buttons. Requires CSS update.
 	 */
-	function attachHideButtonsToTags(item) {
-		logTrace('invoking attachHideButtonsToTags($)', item);
+	function attachHideButtonsToTags(tags, tagContainerNode) {
+		logTrace('invoking attachHideButtonsToTags($, $)', tags, tagContainerNode);
+
+		if (!tags || tags.length === 0 || !tagContainerNode) {
+			//logVerbose('No tags or container provided for button attachment.');
+			return;
+		}
 
 		const attachedKey = 'data-uttv-tags-attached';
 
-		// prevent attaching the button more than once
-		if (item.node.getAttribute(attachedKey) !== null) {
-
-			return logVerbose('Hide buttons already attached to tags.', item);
+		// Check if buttons are already attached to the container (less granular but prevents duplicates)
+		if (tagContainerNode.getAttribute(attachedKey) !== null) {
+			//logVerbose('Hide buttons already attached to tags in this container.', tagContainerNode);
+			return;
 		}
+		tagContainerNode.setAttribute(attachedKey, '');
 
-		// mark item as being processed
-		item.node.setAttribute(attachedKey, '');
-
-		/* BEGIN: build hide button */
-
-			let hideTag = document.createElement('div');
-
-			hideTag.className   = 'uttv-hide-tag';
-			hideTag.textContent = 'X';
-			hideTag.title       = chrome.i18n.getMessage('label_HideTag');
+		/* BEGIN: build hide button template */
+			let hideTagTemplate = document.createElement('div');
+			hideTagTemplate.className   = 'uttv-hide-tag';
+			hideTagTemplate.textContent = 'X';
+			hideTagTemplate.title       = chrome.i18n.getMessage('label_HideTag');
 
 			if (renderButtons === false) {
+				hideTagTemplate.classList.add('uttv-hidden');
+			}
+		/* END: build hide button template */
 
-				hideTag.classList.add('uttv-hidden');
+		for (let i = 0; i < tags.length; i++) {
+			const tag = tags[i];
+			const tagButtonNode = tag.node; // This should be the <button> element
+
+			if (!tagButtonNode || tagButtonNode.querySelector('.uttv-hide-tag')) {
+				// Skip if node is invalid or button already attached
+				continue;
 			}
 
-		/* END: build hide button */
+			const hideTagNode = hideTagTemplate.cloneNode(true);
 
-		const tagsLength = item.tags.length;
-		for (let i = 0; i < tagsLength; i++) {
-
-			const tag         = item.tags[i];
-			const hideTagNode = hideTag.cloneNode(true);
-
-			// attach action listener with backreference to item
-			hideTagNode.setAttribute('data-uttv-tag', tag.name);
+			// Attach action listener with backreference to the tag name
+			hideTagNode.setAttribute('data-uttv-tag-name', tag.name);
 			hideTagNode.addEventListener('click', async(event) => {
-
-				// cancel regular click event on tag
+				// Cancel regular click event on tag
 				event.preventDefault();
 				event.stopPropagation();
 
-				// ask user to confirm action
-				const decision = confirm( chrome.i18n.getMessage('confirm_HideTag') + ' [' + tag.name + ']' );
+				const tagName = event.currentTarget.getAttribute('data-uttv-tag-name');
+				// Ask user to confirm action
+				const decision = confirm( chrome.i18n.getMessage('confirm_HideTag') + ' [' + tagName + ']' );
 				if (decision === true) {
-
-					await onHideTag(item, tag);
+					logInfo('Hide Tag button clicked:', tagName);
+					await onHideTag({ name: tagName }); // Pass simple object
 				}
 			});
 
-			const pNode = (tag.node.firstChild || tag.node);
+			// Make the tag button relative positioning context
+			tagButtonNode.style.position = 'relative';
+			// Append the hide button *inside* the tag button
+			tagButtonNode.appendChild(hideTagNode);
 
-			// parent node might have been replaced after first discovery
-			if (pNode.querySelector('[data-uttv-tag]') === null) {
-
-				pNode.appendChild(hideTagNode);
-
-				// reduce padding
-				// known issue: toggling button rendering at runtime won't fix the padding for already attached buttons
-				if (renderButtons) {
-
-					pNode.style.paddingRight = '0';
-				}
-
-			} else {
-				logVerbose('Hide buttons already attached to tags.', item);
-			}
+			// Adjust padding if needed (might not be necessary if using absolute positioning)
+			// if (renderButtons) {
+			// 	tagButtonNode.style.paddingRight = '...'; // Adjust if needed
+			// }
 		}
+		logVerbose('Attached hide buttons to', tags.length, 'tags in container:', tagContainerNode);
 
-		return hideTag;
+		// IMPORTANT: Requires CSS update in directory.css for `.uttv-hide-tag`
+		// Example CSS:
+		// button.tw-tag { position: relative; /* Needed for absolute child */ }
+		// .uttv-hide-tag {
+		//   position: absolute;
+		//   top: -5px;  /* Adjust as needed */
+		//   right: -5px; /* Adjust as needed */
+		//   z-index: 101; /* Higher than card button */
+		//   cursor: pointer;
+		//   /* Add other styling (background, border-radius, etc.) */
+		// }
 	}
 
 	/**
@@ -1731,38 +1636,34 @@
 		logTrace('invoking toggleHideButtonsVisibility($)', state);
 
 		if (typeof state !== 'boolean') {
-
 			throw new Error('Argument "state" is illegal. Expected a boolean.');
+		}
+		if (!mainNode) {
+			logError('mainNode is null, cannot toggle button visibility.');
+			return [];
 		}
 
 		// store state globally
 		renderButtons = state;
 		await storageSet({ 'renderButtons': renderButtons });
 
-		const buttonsSelector = '.uttv-hide-item, .uttv-hide-tag';
+		const buttonsSelector = '.uttv-hide-item, .uttv-hide-tag'; // Select both types
 		const buttons         = mainNode.querySelectorAll(buttonsSelector);
 		const buttonsLength   = buttons.length;
 
 		if (buttonsLength > 0) {
-
+			logInfo('Toggling', buttonsLength, 'hide buttons to state:', state);
 			if (renderButtons === true) {
-
 				for (let i = 0; i < buttonsLength; i++) {
-
 					buttons[i].classList.remove('uttv-hidden');
 				}
-
 			} else {
-
 				for (let i = 0; i < buttonsLength; i++) {
-
 					buttons[i].classList.add('uttv-hidden');
 				}
 			}
-
 		} else {
-
-			logWarn('Unable to find hide buttons. Expected:', buttonsSelector);
+			logWarn('Unable to find any hide buttons to toggle. Expected:', buttonsSelector);
 		}
 
 		return buttons;
@@ -1773,127 +1674,70 @@
 	 */
 	function addManagementButton() {
 		logTrace('invoking addManagementButton()');
+		if (!mainNode) {
+			logError('mainNode is null, cannot add management button.');
+			return false;
+		}
 
 		let areaSelector;
 		let area;
+		let targetParent = null; // Define parent explicitly
 
+		// --- TODO: Refine selectors for different page types as needed ---
 		switch (currentPageType) {
-
 			case 'frontpage':
-
-				areaSelector = '.root-scrollable__wrapper .front-page-carousel';
+				areaSelector = '.root-scrollable__wrapper .front-page-carousel'; // Needs verification
 				area         = mainNode.querySelector(areaSelector);
+				targetParent = area;
+				break;
 
-				if (area !== null) {
-
-					return buildManagementButton(area, 'uttv-frontpage');
-
-				} else {
-
-					logWarn('Unable to find filters area on current page. Expected:', areaSelector);
-				}
-
-			break;
-
-			case 'categories':
-			case 'channels':
-			case 'game':
-
+			case 'categories': // Confirmed from twitch.tv_directory_html.txt
+			case 'game':       // Confirmed from Retro - Twitch.html
+			case 'channels':   // Assumed similar structure to 'game'
 				areaSelector = 'div[data-a-target="tags-filter-dropdown"]';
 				area         = mainNode.querySelector(areaSelector);
+				targetParent = area?.parentNode?.parentNode; // Go up two levels to the container div
+				break;
 
-				if (area !== null) {
-
-					return buildManagementButton(area.parentNode.parentNode);
-
-				} else {
-
-					logWarn('Unable to find filters area on current page. Expected:', areaSelector);
-				}
-
-			break;
-
-			case 'videos':
-
-				areaSelector = 'div.directory-game-videos-page__filters > div';
+			case 'videos': // Needs verification
+				areaSelector = 'div.directory-videos-page__filters > div'; // Updated potential selector
 				area         = mainNode.querySelector(areaSelector);
+				targetParent = area;
+				break;
 
-				if (area !== null) {
-
-					return buildManagementButton(area, 'uttv-videos');
-
-				} else {
-
-					logWarn('Unable to find filters area on current page. Expected:', areaSelector);
-				}
-
-			break;
-
-			case 'clips':
-
-				areaSelector = 'div.directory-game-clips-page__filters';
+			case 'clips': // Needs verification
+				areaSelector = 'div.directory-clips-page__filters'; // Updated potential selector
 				area         = mainNode.querySelector(areaSelector);
+				targetParent = area;
+				break;
 
-				if (area !== null) {
-
-					return buildManagementButton(area, 'uttv-clips');
-
-				} else {
-
-					logWarn('Unable to find filters area on current page. Expected:', areaSelector);
-				}
-
-			break;
-
-			case 'explore':
-
+			case 'explore': // Needs verification
 				areaSelector = '.verticals__header-wrapper';
 				area         = mainNode.querySelector(areaSelector);
+				targetParent = area?.firstChild;
+				break;
 
-				if (area !== null) {
-
-					return buildManagementButton(area.firstChild, 'uttv-explore');
-
-				} else {
-
-					logWarn('Unable to find filters area on current page. Expected:', areaSelector);
-				}
-
-			break;
-
-			case 'following':
-
-				areaSelector = 'ul[role="tablist"]';
+			case 'following': // Needs verification for live/videos/games tabs
+				areaSelector = 'ul[role="tablist"]'; // Anchor near the tabs
 				area         = mainNode.querySelector(areaSelector);
+				targetParent = area?.parentNode;
+				break;
 
-				if (area !== null) {
-
-					return buildManagementButton(area.parentNode);
-
-				} else {
-
-					logWarn('Unable to find filters area on current page. Expected:', areaSelector);
-				}
-
-			break;
-
-			case 'collection':
-
+			case 'collection': // Needs verification
 				areaSelector = '#directory-game-main-content h1';
 				area         = mainNode.querySelector(areaSelector);
-
-				if (area !== null) {
-
-					return buildManagementButton(area.parentNode, 'uttv-collection');
-				}
-
-			break;
+				targetParent = area?.parentNode;
+				break;
 
 			default:
+				logError('Unable to add management button, page type is unhandled:', currentPageType);
+				return false; // Exit if type is unknown/unsupported
+		}
 
-				logError('Unable to add management button, because the page type is unhandled:', currentPageType);
-
-			break;
+		if (targetParent) {
+			return buildManagementButton(targetParent); // Pass the determined parent
+		} else {
+			logWarn('Unable to find anchor area for management button on page type:', currentPageType, 'Expected selector:', areaSelector);
 		}
 
 		return false;
@@ -1903,13 +1747,17 @@
 	 * Adds a button to open the management view in the specified area.
 	 */
 	function buildManagementButton(areaNode, className = '', position = 'append') {
-		logTrace('invoking buildManagementButton($, $)', areaNode, className);
+		logTrace('invoking buildManagementButton($, $, $)', areaNode, className, position);
+
+		if (!areaNode) {
+			logError('buildManagementButton called with null areaNode.');
+			return false;
+		}
 
 		// prevent adding more than one button in the specified area
 		if (areaNode.querySelector('div[data-uttv-management]') !== null) {
-
 			logInfo('Management button already present in the specified area:', areaNode);
-			return false;
+			return false; // Button already exists
 		}
 
 		let container = document.createElement('div');
@@ -1917,67 +1765,80 @@
 
 		// container's class
 		if (Array.isArray(className)) {
-
 			className = className.join(' ');
 		}
-		if (typeof className === 'string') {
-
+		if (typeof className === 'string' && className.length > 0) { // Add class only if provided
 			container.className = className;
 		}
+		// Add a base class for potential common styling
+		container.classList.add('uttv-management-container');
 
 		let button = document.createElement('div');
-		button.className = 'uttv-button';
+		button.className = 'uttv-button'; // Keep existing class
 
 		let buttonText = document.createElement('div');
-		buttonText.className = 'uttv-manage';
+		buttonText.className = 'uttv-manage'; // Keep existing class
 		buttonText.textContent = chrome.i18n.getMessage('label_Management');
 
 		// click action for label
 		buttonText.addEventListener('click', async() => {
-
 			try {
+				logInfo('Opening blacklist manager from button click.');
 				await chrome.runtime.sendMessage({ action: 'openBlacklist' });
 			}
-			catch {
+			catch(error) { // Catch specific error
 				logError('Failed to open blacklist tab.', error);
 			}
 		});
 
 		let buttonToggle = document.createElement('div');
-		buttonToggle.className = 'uttv-toggle';
+		buttonToggle.className = 'uttv-toggle'; // Keep existing class
 		buttonToggle.textContent = '👁';
+		buttonToggle.title = renderButtons ? 'Hide filter buttons' : 'Show filter buttons'; // Dynamic title
 
 		// click action for eye symbol
 		buttonToggle.addEventListener('click', async() => {
-
-			// require the user to confirm his intent to hide the "X" buttons (prevent accidental toggle)
+			const newState = !renderButtons; // Determine the target state *before* confirming
+			logInfo('Toggle visibility button clicked. Current state:', renderButtons, 'Target state:', newState);
+			// Require confirmation only when hiding
 			if (renderButtons === true) {
-
 				const confirmed = confirm( chrome.i18n.getMessage('confirm_HideButtons') );
-				if (!confirmed) { return; }
+				if (!confirmed) {
+					logInfo('User cancelled hiding buttons.');
+					return;
+				}
 			}
-
-			await toggleHideButtonsVisibility(!renderButtons);
+			// Update the tooltip before toggling
+			buttonToggle.title = newState ? 'Hide filter buttons' : 'Show filter buttons';
+			await toggleHideButtonsVisibility(newState);
 		});
 
 		button.appendChild(buttonText);
 		button.appendChild(buttonToggle);
 		container.appendChild(button);
 
-		if (position === 'append') {
-
-			areaNode.appendChild(container);
-
-		} else if (position === 'prepend') {
-
-			areaNode.parentNode.insertBefore(container, areaNode.parentNode.firstChild);
-
-		} else {
-
-			throw new Error('Argument "position" is illegal. Expected one of: "append", "prepend"');
+		// Simplified positioning logic
+		try {
+			if (position === 'append') {
+				areaNode.appendChild(container);
+			} else if (position === 'prepend') {
+				// Ensure parentNode exists before attempting prepend
+				if (areaNode.parentNode) {
+					areaNode.parentNode.insertBefore(container, areaNode); // Insert before the areaNode itself
+				} else {
+					logError('Cannot prepend management button, areaNode has no parentNode:', areaNode);
+					return false;
+				}
+			} else {
+				logError('Argument "position" is illegal. Expected one of: "append", "prepend". Got:', position);
+				return false;
+			}
+			logInfo('Successfully added management button.', container, 'to area:', areaNode);
+			return true;
+		} catch (error) {
+			logError('Error adding management button to areaNode:', error, areaNode, container);
+			return false;
 		}
-
-		return true;
 	}
 
 /* END: controls */
@@ -1990,349 +1851,109 @@
 	function onPageChange(page) {
 		logTrace('invoking onPageChange($)', page);
 
-		// prevent page change before the first initialization completed
+		// Prevent page change before the first initialization completed
 		if (initRun !== true) {
-
-			return logWarn('Aborting invocation of onPageChange($), because the extension is not yet initialized.', page);
+			return logWarn('Aborting onPageChange, extension not initialized.', page);
 		}
 
-		// prevent running multiple page changes at once
+		// Prevent running multiple page changes at once
 		if (pageLoads === true) {
-
-			return logWarn('Aborting invocation of onPageChange($), because the current page is still loading.', page);
+			return logWarn('Aborting onPageChange, previous page load still in progress.', page);
 		}
+
+		// Clear previous page load polling interval if any
+		window.clearInterval(onPageChangeInterval);
 
 		if (isSupportedPage(page) === false) {
-
-			stopPageChangePolling();
-
-			// try to observe sidebar anyway
-			observeSidebar();
-
-			return logWarn('Stopped onPageChange($) polling, because the current page is not supported.', page);
+			logWarn('onPageChange: Current page is not supported. Stopping polling.', page);
+			stopPageChangePolling(); // Ensure polling stops
+			observeSidebar(); // Still try to observe sidebar on unsupported pages
+			return;
 		}
 
+		logInfo('onPageChange: Starting process for supported page:', page, 'Type:', currentPageType);
 		pageLoads = true;
+		placeholderLoop = 0; // Reset placeholder loop counter
+		onPageChangeCounter = 0;
+		const pageLoadMonitorInterval = 150; // Slightly longer interval
+		const pageLoadTimeout = 20000 / pageLoadMonitorInterval; // ~20 seconds timeout
 
-		onPageChangeCounter           = 0;
-		const pageLoadMonitorInterval = 100;
-		const pageLoadTimeout         = (20000 / pageLoadMonitorInterval);
+		// Ensure mainNode is available
+		const mainNodeSelector = 'main';
+		mainNode = document.querySelector(mainNodeSelector);
+		if (!mainNode) {
+			logError('onPageChange: Main node not found, cannot proceed. Expected:', mainNodeSelector);
+			pageLoads = false; // Reset loading state
+			return; // Cannot proceed without main node
+		}
 
-		// wait until the directory is fully loaded
-		window.clearInterval(onPageChangeInterval);
+		// Wait until the directory content seems loaded
 		onPageChangeInterval = window.setInterval(function onPageChange_waitingForPageLoad() {
-			logTrace('polling started in onPageChange(): waiting for page to load');
-
+			//logTrace('Polling for page load completion...'); // Reduce log noise
 			onPageChangeCounter += 1;
 
-			/* BEGIN: main */
+			// Generic check for *any* primary content card (stream, category, VOD, clip)
+			// Use the container selectors we identified/will identify
+			const contentCardSelector = [
+				'div.Layout-sc-1xcs6mc-0.jCGmCy', // Stream card container
+				'div.Layout-sc-1xcs6mc-0.ScTowerItem-sc-1sjzzes-2', // Category card container
+				// --- TODO: Add VOD/Clip container selectors here ---
+			].join(', ');
 
-				if (mainNode === null) {
+			const indicator = mainNode.querySelector(contentCardSelector);
+			const placeholderNode = rootNode.querySelector('.tw-placeholder'); // Standard Twitch placeholder
 
-					const mainNodeSelector = 'main';
-					mainNode               = document.querySelector(mainNodeSelector);
+			// Condition 1: Content indicator found AND (no placeholder OR placeholder timeout reached)
+			if (indicator !== null && (placeholderNode === null || placeholderLoop >= MAX_PLACEHOLDER_LOOP)) {
+				logInfo('Page content indicator found, proceeding with initialization.', indicator);
+				stopPageChangePolling(); // Stop this polling interval
+				logTrace('Polling stopped in onPageChange(): page loaded indicator found.');
 
-					if (mainNode === null) {
+				// --- Actions to perform once page content is detected ---
+				addManagementButton(); // Attempt to add the management button
 
-						logWarn('Main not found. Expected:', mainNodeSelector);
-					}
+				// Initial Filter Run
+				let remainingItems;
+				if (currentPageType === 'following' && hideFollowing === false) {
+					logInfo('Filtering only recommended items on Following page due to settings.');
+					remainingItems = filterDirectory('recommended', true); // Filter recommended first
+					filterDirectory('unprocessed', false); // Mark others as processed without hiding
+				} else {
+					logInfo('Filtering all visible items.');
+					remainingItems = filterDirectory('visible', true); // Default: Filter all visible
 				}
 
-			/* END: main */
-
-			if (mainNode !== null) {
-
-				let indicator;
-
-				switch (currentPageType) {
-
-					case 'frontpage':
-					case 'explore':
-
-						const placeholderNode = rootNode.querySelector('.tw-placeholder');
-						if (
-							(placeholderNode !== null) &&
-							(placeholderLoop < MAX_PLACEHOLDER_LOOP)
-						) {
-
-							placeholderLoop++;
-							return logVerbose(`Found a placeholder in loop ${placeholderLoop}. Assuming the page is not fully loaded yet.`, placeholderNode);
-						}
-
-						stopPageChangePolling();
-						logTrace('polling stopped in onPageChange(): page loaded');
-
-						addManagementButton();
-
-						// invoke directory filter
-						const remainingItems = filterDirectory();
-
-						// attach hide buttons to the remaining items
-						attachHideButtons(remainingItems);
-
-						// invoke sidebar filter
-						if (hideFollowing === true) {
-
-							filterSidebar();
-							observeSidebar();
-
-						} else {
-
-							filterSidebar('recommended');
-							observeSidebar('recommended');
-						}
-
-						// detect changes (delayed loading, clicking on "Show more")
-						listenToScroll();
-
-					break;
-
-					case 'categories':
-					case 'channels':
-					case 'game':
-
-						indicator = mainNode.querySelector('div[data-target][style^="order:"], article[data-a-target="shelf-card"]');
-						if (indicator !== null) {
-
-							const placeholderNode = rootNode.querySelector('.tw-placeholder');
-							if (
-								(placeholderNode !== null) &&
-								(placeholderLoop < MAX_PLACEHOLDER_LOOP)
-							) {
-
-								placeholderLoop++;
-								return logVerbose(`Found a placeholder in loop ${placeholderLoop}. Assuming the page is not fully loaded yet.`, placeholderNode);
-							}
-
-							stopPageChangePolling();
-							logTrace('polling stopped in onPageChange(): page loaded');
-
-							addManagementButton();
-
-							// invoke directory filter
-							const remainingItems = filterDirectory();
-
-							// attach hide buttons to the remaining items
-							attachHideButtons(remainingItems);
-
-							// invoke sidebar filter
-							if (hideFollowing === true) {
-
-								filterSidebar();
-								observeSidebar();
-
-							} else {
-
-								filterSidebar('recommended');
-								observeSidebar('recommended');
-							}
-
-							// detect scrolling
-							listenToScroll();
-						}
-
-					break;
-
-					case 'videos':
-
-						indicator = mainNode.querySelector('div[data-a-target^="video-tower-card-"]');
-						if (indicator !== null) {
-
-							const placeholderNode = rootNode.querySelector('.tw-placeholder');
-							if (
-								(placeholderNode !== null) &&
-								(placeholderLoop < MAX_PLACEHOLDER_LOOP)
-							) {
-
-								placeholderLoop++;
-								return logVerbose(`Found a placeholder in loop ${placeholderLoop}. Assuming the page is not fully loaded yet.`, placeholderNode);
-							}
-
-							stopPageChangePolling();
-							logTrace('polling stopped in onPageChange(): page loaded');
-
-							addManagementButton();
-
-							// invoke directory filter
-							const remainingItems = filterDirectory();
-
-							// attach hide buttons
-							attachHideButtons(remainingItems);
-
-							// invoke sidebar filter
-							if (hideFollowing === true) {
-
-								filterSidebar();
-								observeSidebar();
-
-							} else {
-
-								filterSidebar('recommended');
-								observeSidebar('recommended');
-							}
-
-							// detect scrolling
-							listenToScroll();
-						}
-
-					break;
-
-					case 'clips':
-
-						indicator = mainNode.querySelector('div[data-a-target^="clips-card-"]');
-						if (indicator !== null) {
-
-							const placeholderNode = rootNode.querySelector('.tw-placeholder');
-							if (
-								(placeholderNode !== null) &&
-								(placeholderLoop < MAX_PLACEHOLDER_LOOP)
-							) {
-
-								placeholderLoop++;
-								return logVerbose(`Found a placeholder in loop ${placeholderLoop}. Assuming the page is not fully loaded yet.`, placeholderNode);
-							}
-
-							stopPageChangePolling();
-							logTrace('polling stopped in onPageChange(): page loaded');
-
-							addManagementButton();
-
-							// invoke directory filter
-							const remainingItems = filterDirectory();
-
-							// attach hide buttons
-							attachHideButtons(remainingItems);
-
-							// invoke sidebar filter
-							if (hideFollowing === true) {
-
-								filterSidebar();
-								observeSidebar();
-
-							} else {
-
-								filterSidebar('recommended');
-								observeSidebar('recommended');
-							}
-
-							// detect scrolling
-							listenToScroll();
-						}
-
-					break;
-
-					case 'following':
-
-						indicator = mainNode.querySelector('a[data-a-target="preview-card-image-link"], a[data-a-target="tw-box-art-card-link"]');
-						if (indicator !== null) {
-
-							const placeholderNode = rootNode.querySelector('.tw-placeholder');
-							if (
-								(placeholderNode !== null) &&
-								(placeholderLoop < MAX_PLACEHOLDER_LOOP)
-							) {
-
-								placeholderLoop++;
-								return logVerbose(`Found a placeholder in loop ${placeholderLoop}. Assuming the page is not fully loaded yet.`, placeholderNode);
-							}
-
-							stopPageChangePolling();
-							logTrace('polling stopped in onPageChange(): page loaded');
-
-							addManagementButton();
-
-							if (hideFollowing === true) {
-
-								// invoke directory filter
-								const remainingItems = filterDirectory();
-
-								// attach hide buttons
-								attachHideButtons(remainingItems);
-
-								// invoke sidebar filter
-								if (hideFollowing === true) {
-
-									filterSidebar();
-									observeSidebar();
-
-								} else {
-
-									filterSidebar('recommended');
-									observeSidebar('recommended');
-								}
-
-							} else {
-
-								logInfo('Filtering is disabled on the current page due to user preference.');
-
-								// invoke directory filter for recommended section
-								const remainingItems = filterDirectory('recommended');
-
-								// mark remaining items as being processed
-								filterDirectory('unprocessed', false);
-
-								// attach hide buttons
-								attachHideButtons(remainingItems);
-
-								// invoke sidebar filter
-								filterSidebar('recommended');
-								observeSidebar('recommended');
-							}
-
-							// detect expanding sections
-							listenToScroll();
-						}
-
-					break;
-
-					case 'collection':
-
-						indicator = mainNode.querySelector('article[data-a-target^="card-"]');
-						if (indicator !== null) {
-
-							stopPageChangePolling();
-							logTrace('polling stopped in onPageChange(): page loaded');
-
-							addManagementButton();
-
-							// invoke directory filter
-							const remainingItems = filterDirectory();
-
-							// attach hide buttons to the remaining items
-							attachHideButtons(remainingItems);
-
-							// invoke sidebar filter
-							if (hideFollowing === true) {
-
-								filterSidebar();
-								observeSidebar();
-
-							} else {
-
-								filterSidebar('recommended');
-								observeSidebar('recommended');
-							}
-
-							// detect scrolling
-							listenToScroll();
-						}
-
-					break;
-
-					default:
-
-						stopPageChangePolling();
-						logError('Unable to detect page load progress, because the page type is unhandled:', currentPageType);
-
-					break;
+				// Attach Buttons to Remaining Items
+				attachHideButtons(remainingItems);
+				logInfo('Attached hide buttons to', remainingItems.length, 'items.');
+
+				// Filter Sidebar
+				if (hideFollowing === true) {
+					filterSidebar('visible'); // Filter all visible sidebar items
+				} else {
+					filterSidebar('recommended'); // Filter only recommended sidebar items
 				}
-			}
+				// Always observe sidebar after initial setup
+				observeSidebar();
 
-			// prevent waiting infinitely for page load in case the content is unknown
-			if (onPageChangeCounter > pageLoadTimeout) {
+				// Start listening for dynamically loaded content / scroll events
+				listenToScroll();
+				// --- End Actions ---
 
-				stopPageChangePolling();
-				logWarn('Stopped polling in onPageChange($), because current page did not load within ' + (pageLoadTimeout / 10) + ' seconds.', page);
+			} else if (placeholderNode !== null && placeholderLoop < MAX_PLACEHOLDER_LOOP) {
+				placeholderLoop++;
+				logVerbose(`Placeholder detected (loop ${placeholderLoop}/${MAX_PLACEHOLDER_LOOP}), waiting...`);
+				// Continue polling
+
+			} else if (indicator === null && onPageChangeCounter <= pageLoadTimeout) {
+				logVerbose('Page content indicator not found yet, polling again...');
+				// Continue polling if timeout not reached
+
+			} else if (onPageChangeCounter > pageLoadTimeout) {
+				stopPageChangePolling(); // Stop interval on timeout
+				logWarn('Stopped polling in onPageChange(): Page did not load indicator within timeout.', page);
+				// Attempt sidebar observation anyway
+				observeSidebar();
 			}
 
 		}, pageLoadMonitorInterval);
@@ -2340,43 +1961,50 @@
 
 	/**
 	 * Event that is emitted by hide buttons on cards in the directory of the current page.
+	 * UPDATE: Reads data attributes from the button itself.
 	 */
-	async function onHideItem(item) {
-		logTrace('invoking onHideItem($)', item);
+	async function onHideItem(itemData) {
+		logTrace('invoking onHideItem($)', itemData);
 
-		if (item.name.length === 0) {
-
-			logError('Unable to hide item in directory. The name could not be determined:', item);
-
+		if (!itemData || !itemData.type || !itemData.name || itemData.name.length === 0) {
+			logError('Unable to hide item. Invalid data received:', itemData);
 			return false;
 		}
 
-		// update cache
-		const nameL = normalizeCase(item.name);
-		modifyBlacklistedItems(item.type, nameL);
+		const itemType = itemData.type;
+		const itemName = itemData.name; // Name is already normalized or comes from data attr
 
-		// update storage
+		logInfo('Adding item to blacklist:', itemType, itemName);
+
+		// Update cache (pass type and name directly)
+		modifyBlacklistedItems(itemType, itemName); // Uses the function overload for single item
+
+		// Update storage
 		await putBlacklistedItems(storedBlacklistedItems);
 	}
 
 	/**
 	 * Event that is emitted by hide buttons on tags in the directory of the current page.
+	 * UPDATE: Reads data attribute from the button itself.
 	 */
-	async function onHideTag(item, tag) {
-		logTrace('invoking onHideTag($, $)', item, tag);
+	async function onHideTag(tagData) {
+		logTrace('invoking onHideTag($)', tagData);
 
-		if (tag.name.length === 0) {
-
-			logError('Unable to hide tag in directory. The name could not be determined:', tag);
-
+		if (!tagData || !tagData.name || tagData.name.length === 0) {
+			logError('Unable to hide tag. Invalid data received:', tagData);
 			return false;
 		}
 
-		// update cache
-		const nameL = normalizeCase(tag.name);
-		modifyBlacklistedItems('tags', nameL);
+		const tagName = tagData.name; // Name comes from data attribute
+		logInfo('Adding tag to blacklist:', tagName);
 
-		// update storage
+		// Update cache
+		// No need to normalize here if it comes directly from data-a-target which seems unnormalized
+		// But blacklist.js *does* normalize, so maybe we should too for consistency?
+		// Let's stick to what's passed for now, assuming match logic handles normalization.
+		modifyBlacklistedItems('tags', tagName); // Add the raw tag name
+
+		// Update storage
 		await putBlacklistedItems(storedBlacklistedItems);
 	}
 
@@ -2387,30 +2015,33 @@
 		logTrace('invoking onScroll()');
 
 		if (pageLoads === true) {
-
-			logWarn('Cancelled emitted scroll event, because page load is in progress.');
+			logWarn('Cancelled onScroll event, page load is in progress.');
+			return false;
+		}
+		if (directoryFilterRunning === true) {
+			logWarn('Cancelled onScroll event, directory filter already running.');
 			return false;
 		}
 
 		let remainingItems;
 
-		if (
-			(currentPageType !== 'following') ||
-			(hideFollowing === true)
-		) {
+		logInfo('Scroll/Dynamic content detected, filtering unprocessed items...');
 
-			remainingItems = filterDirectory('unprocessed');
-
+		if (currentPageType === 'following' && hideFollowing === false) {
+			// Only filter recommended items if on 'following' and filtering is disabled for followed items
+			remainingItems = filterDirectory('recommended', true); // Target recommended specifically if they appear dynamically
+			filterDirectory('unprocessed', false); // Mark any other new items as processed without hiding
 		} else {
-
-			// invoke directory filter for recommended section
-			remainingItems = filterDirectory('recommended');
-
-			// mark remaining items as being processed
-			filterDirectory('unprocessed', false);
+			// Filter all newly appeared items
+			remainingItems = filterDirectory('unprocessed', true);
 		}
 
-		attachHideButtons(remainingItems);
+		if (remainingItems.length > 0) {
+			logInfo('Attaching buttons to', remainingItems.length, 'newly processed items.');
+			attachHideButtons(remainingItems);
+		} else {
+			logVerbose('No new items remained after filtering dynamically loaded content.');
+		}
 		return true;
 	}
 
@@ -2432,8 +2063,7 @@
 		];
 
 		// base container
-		if (typeof collection !== 'object') {
-
+		if (typeof collection !== 'object' || collection === null) { // Ensure collection is an object
 			collection = {};
 		}
 
@@ -2442,9 +2072,15 @@
 
 			let itemType = itemTypes[i];
 
+			// Ensure each type exists and is an object (for map types) or array (for titles)
 			if (collection[itemType] === undefined) {
-
-				collection[itemType] = {};
+				collection[itemType] = (itemType === 'titles') ? [] : {};
+			} else if (itemType === 'titles' && !Array.isArray(collection[itemType])) {
+				logWarn('Correcting non-array titles blacklist to array.');
+				collection[itemType] = []; // Force titles to be an array
+			} else if (itemType !== 'titles' && (typeof collection[itemType] !== 'object' || Array.isArray(collection[itemType]) || collection[itemType] === null)) {
+				logWarn('Correcting non-object', itemType, 'blacklist to object.');
+				collection[itemType] = {}; // Force others to be objects
 			}
 		}
 
@@ -2457,236 +2093,259 @@
 	async function getBlacklistedItems() {
 		logTrace('invoking getBlacklistedItems()');
 
-		const result = await storageGet(null);
-
 		let blacklistedItems = {};
-		if (typeof result.blacklistedItems === 'object') {
+		try {
+			const result = await storageGet(null); // Get all storage data for the current mode
 
-			blacklistedItems = result.blacklistedItems;
-
-		} else if (typeof result['blItemsFragment0'] === 'object') {
-
-			blacklistedItems = mergeBlacklistFragments(result);
-			logVerbose('Merged fragments to blacklist:', result, blacklistedItems);
+			if (result) { // Check if result is not null/undefined
+				if (typeof result.blacklistedItems === 'object' && result.blacklistedItems !== null) {
+					blacklistedItems = result.blacklistedItems;
+					logVerbose('Loaded single blacklist object.');
+				} else if (typeof result['blItemsFragment0'] === 'object') {
+					blacklistedItems = mergeBlacklistFragments(result);
+					logVerbose('Merged fragments to blacklist:', Object.keys(result).filter(k => k.startsWith('blItemsFragment')).length, 'fragments processed.');
+				} else {
+					logWarn('No valid blacklist data found in storage.');
+				}
+			} else {
+				logWarn('Storage retrieval returned null/undefined.');
+			}
+		} catch (error) {
+			logError('Error retrieving blacklist items:', error);
 		}
 
-		return blacklistedItems;
+		// Ensure the final object is initialized correctly
+		return initBlacklistedItems(blacklistedItems);
 	}
 
 	/**
 	 * Stores the provided items or a single item in the local cache.
 	 * Maintains several internal lists to improve matching performance.
+	 * UPDATE: Clears caches before rebuilding or adding single items.
 	 */
-	function modifyBlacklistedItems(items, item) {
-		logTrace('invoking modifyBlacklistedItems($, $)', items, item);
+	function modifyBlacklistedItems(arg1, arg2) {
+		logTrace('invoking modifyBlacklistedItems($, $)', arg1, arg2);
 
-		if (item !== undefined) {
+		// Overload 1: modifyBlacklistedItems(type, term) - Add single item
+		if (typeof arg1 === 'string' && typeof arg2 === 'string') {
+			const type = arg1;
+			const term = arg2;
 
-			if (storedBlacklistedItems[items] === undefined) {
-				storedBlacklistedItems[items] = {};
+			// Ensure the type exists in the main blacklist object
+			if (storedBlacklistedItems[type] === undefined) {
+				storedBlacklistedItems[type] = (type === 'titles') ? [] : {};
 			}
-			storedBlacklistedItems[items][item] = 1;
 
-			if (isExactTerm(item)) {
-
-				if (cacheExactTerms[items] === undefined) {
-					cacheExactTerms[items] = [];
+			// Add to main blacklist object
+			if(type === 'titles') {
+				if (!storedBlacklistedItems[type].includes(term)) {
+					storedBlacklistedItems[type].push(term);
 				}
-
-				cacheExactTerms[items].push(
-					item.substring(1, (item.length -1))
-				);
-				return;
+			} else {
+				storedBlacklistedItems[type][term] = 1;
 			}
 
-			if (isLooseTerm(item)) {
-
-				if (cacheLooseTerms[items] === undefined) {
-					cacheLooseTerms[items] = [];
+			// Clear and rebuild specific cache type for the single item
+			if (isExactTerm(term)) {
+				cacheExactTerms[type] = cacheExactTerms[type] || [];
+				const exactVal = term.substring(1, term.length - 1);
+				if (!cacheExactTerms[type].includes(exactVal)) {
+					cacheExactTerms[type].push(exactVal);
 				}
-
-				cacheLooseTerms[items].push(
-					item.substring(1)
-				);
-				return;
-			}
-
-			if (isRegExpTerm(item)) {
-
-				if (cacheRegExpTerms[items] === undefined) {
-					cacheRegExpTerms[items] = [];
+			} else if (isLooseTerm(term)) {
+				cacheLooseTerms[type] = cacheLooseTerms[type] || [];
+				const looseVal = term.substring(1);
+				if (!cacheLooseTerms[type].includes(looseVal)) {
+					cacheLooseTerms[type].push(looseVal);
 				}
-
-				cacheRegExpTerms[items].push( toRegExp(item) );
-				return;
+			} else if (isRegExpTerm(term)) {
+				cacheRegExpTerms[type] = cacheRegExpTerms[type] || [];
+				const regexp = toRegExp(term);
+				if (regexp && !cacheRegExpTerms[type].some(r => r.toString() === regexp.toString())) { // Avoid duplicate regexps
+					cacheRegExpTerms[type].push(regexp);
+				}
 			}
+			logVerbose('Added single item to cache:', type, term);
 
-		} else {
-
+		// Overload 2: modifyBlacklistedItems(fullBlacklistObject) - Replace entire cache
+		} else if (typeof arg1 === 'object' && arg1 !== null && arg2 === undefined) {
+			const items = initBlacklistedItems(arg1); // Ensure structure is correct
 			storedBlacklistedItems = items;
 
-			// rebuild caches
+			// Clear and rebuild all caches
 			cacheExactTerms  = {};
 			cacheLooseTerms  = {};
 			cacheRegExpTerms = {};
 
-			const itemTypes = [
-				'categories',
-				'channels',
-				'tags',
-				'titles'
-			];
-
-			for (const itemType of itemTypes) {
+			logVerbose('Rebuilding all blacklist caches...');
+			for (const itemType in items) {
+				if (!items.hasOwnProperty(itemType)) continue;
 
 				let terms;
-				if (Array.isArray(items[itemType])) {
-
+				if (Array.isArray(items[itemType])) { // Handle titles array
 					terms = items[itemType];
-
-				} else {
-
+				} else if (typeof items[itemType] === 'object' && items[itemType] !== null){ // Handle category/channel/tag objects
 					terms = Object.keys(items[itemType]);
+				} else {
+					logWarn('Unexpected data structure for itemType:', itemType, items[itemType]);
+					continue; // Skip invalid types
 				}
 
 				for (const term of terms) {
+					if (typeof term !== 'string') continue; // Skip non-string terms
 
 					if (isExactTerm(term)) {
-
-						if (cacheExactTerms[itemType] === undefined) {
-							cacheExactTerms[itemType] = [];
+						cacheExactTerms[itemType] = cacheExactTerms[itemType] || [];
+						const exactVal = term.substring(1, term.length - 1);
+						if (!cacheExactTerms[itemType].includes(exactVal)) {
+							cacheExactTerms[itemType].push(exactVal);
 						}
-
-						cacheExactTerms[itemType].push(
-							term.substring(1, (term.length -1))
-						);
-						continue;
-					}
-
-					if (isLooseTerm(term)) {
-
-						if (cacheLooseTerms[itemType] === undefined) {
-							cacheLooseTerms[itemType] = [];
+					} else if (isLooseTerm(term)) {
+						cacheLooseTerms[itemType] = cacheLooseTerms[itemType] || [];
+						const looseVal = term.substring(1);
+						if (!cacheLooseTerms[itemType].includes(looseVal)) {
+							cacheLooseTerms[itemType].push(looseVal);
 						}
-
-						cacheLooseTerms[itemType].push(
-							term.substring(1)
-						);
-						continue;
-					}
-
-					if (isRegExpTerm(term)) {
-
-						if (cacheRegExpTerms[itemType] === undefined) {
-							cacheRegExpTerms[itemType] = [];
+					} else if (isRegExpTerm(term)) {
+						cacheRegExpTerms[itemType] = cacheRegExpTerms[itemType] || [];
+						const regexp = toRegExp(term);
+						if (regexp && !cacheRegExpTerms[itemType].some(r => r.toString() === regexp.toString())) {
+							cacheRegExpTerms[itemType].push(regexp);
 						}
-
-						cacheRegExpTerms[itemType].push( toRegExp(term) );
-						continue;
 					}
+					// Regular terms are implicitly handled by the main storedBlacklistedItems check
 				}
 			}
+			logVerbose('Finished rebuilding caches.');
+		} else {
+			logError('Invalid arguments passed to modifyBlacklistedItems:', arg1, arg2);
 		}
+		// Log cache sizes for debugging
+		// logVerbose('Cache sizes:',
+		//     'Exact:', Object.values(cacheExactTerms).reduce((sum, arr) => sum + arr.length, 0),
+		//     'Loose:', Object.values(cacheLooseTerms).reduce((sum, arr) => sum + arr.length, 0),
+		//     'RegExp:', Object.values(cacheRegExpTerms).reduce((sum, arr) => sum + arr.length, 0)
+		// );
 	}
 
 	/**
 	 * Stores all blacklisted items in the storage.
 	 */
-	async function putBlacklistedItems(items, attemptRecovery) {
+	async function putBlacklistedItems(items, attemptRecovery = true) { // Default attemptRecovery to true
 		logTrace('invoking putBlacklistedItems($, $)', items, attemptRecovery);
+
+		if (typeof items !== 'object' || items === null) {
+			logError('putBlacklistedItems called with invalid items:', items);
+			return; // Don't proceed with invalid data
+		}
 
 		const mode   = await getStorageMode();
 		const isSync = (mode === 'sync');
 
 		if (attemptRecovery === false) {
-
-			logWarn('Restoring backup:', items);
+			logWarn('Attempting to restore backup to storage:', items);
 		}
 
-		// prepare backup of current items
-		const backupItems = cloneBlacklistItems(items);
+		// Always use a clone to avoid modifying the live cache during async ops
+		const itemsToStore = initBlacklistedItems(cloneBlacklistItems(items));
 
-		let dataToStore = { 'blacklistedItems': items };
+		let dataToStore = { 'blacklistedItems': itemsToStore };
+		let requiresSplitting = false;
 
 		if (isSync) {
-
 			const requiredSize = measureStoredSize(dataToStore);
-
 			if (requiredSize > storageSyncMaxSize) {
-
-				logWarn('Blacklist to store (' + requiredSize + ') exceeds the maximum storage size per item (' + storageSyncMaxSize + '). Splitting required...');
-				dataToStore = splitBlacklistItems(items);
-				logVerbose('Splitting of blacklist completed:', dataToStore);
+				logWarn('Blacklist (' + requiredSize + ' bytes) exceeds sync limit per item (' + storageSyncMaxSize + '). Splitting...');
+				requiresSplitting = true;
+				dataToStore = splitBlacklistItems(itemsToStore); // Use the cloned, initialized data
+				if (Object.keys(dataToStore).length > storageSyncMaxKeys) {
+					logError('Cannot save blacklist: Number of fragments (' + Object.keys(dataToStore).length + ') exceeds MAX_ITEMS (' + storageSyncMaxKeys + ').');
+					// Optionally, attempt to save to local storage instead or alert user
+					alert(chrome.i18n.getMessage('alert_StorageQuota')); // Inform user
+					// Force switch to local storage and try saving there
+					await chrome.storage.local.set({ 'useLocalStorage': true });
+					logWarn('Forcing switch to local storage due to sync quota limits.');
+					await putBlacklistedItems(items, false); // Retry with local, don't loop recovery
+					return; // Exit after attempting local save
+				}
+				logVerbose('Splitting of blacklist completed. Fragments:', Object.keys(dataToStore).length);
 			}
 		}
 
-		const keysToRemove = [ 'blacklistedItems' ];
-		for (let i = 0; i < (storageMaxFragments - 1); i++) {
-
+		// Clear previous data structure (either single key or fragments) before setting new data
+		const keysToRemove = ['blacklistedItems'];
+		for (let i = 0; i < storageMaxFragments; i++) { // Use defined constant
 			keysToRemove.push('blItemsFragment' + i);
 		}
-		await storageRemove(keysToRemove);
+		logVerbose('Clearing previous blacklist keys:', keysToRemove);
+		await storageRemove(keysToRemove); // Ensure removal finishes before setting
 
+		// Now set the new data (either single object or fragments)
+		logVerbose('Attempting to save data to', mode, 'storage:', dataToStore);
 		const error = await storageSet(dataToStore);
 
-		// inform user about storage quota
-		if (
-			(error !== null) &&
-			(error.message !== undefined) &&
-			(typeof error.message === 'string')
-		) {
+		// Handle potential errors
+		if (error) { // Check if error object exists
+			logError('Error saving blacklist to', mode, 'storage:', error.message || error);
+			if (attemptRecovery) { // Only alert and retry once
+				const suffix = ('\n\nStorage Service Error:\n' + (error.message || 'Unknown error'));
+				let alertMessage = chrome.i18n.getMessage('alert_StorageIssue'); // Default message
 
-			if (attemptRecovery !== false) {
-
-				const suffix = ('\n\nStorage Service Error:\n' + error.message);
-
-				if (error.message.indexOf('QUOTA_BYTES') >= 0) {
-
-					alert(chrome.i18n.getMessage('alert_StorageQuota') + suffix);
-
-				} else if (error.message.indexOf('MAX_') >= 0) {
-
-					alert(chrome.i18n.getMessage('alert_StorageThrottle') + suffix);
-
-				} else {
-
-					alert(chrome.i18n.getMessage('alert_StorageIssue') + suffix);
+				if (error.message && error.message.includes('QUOTA_BYTES')) {
+					alertMessage = chrome.i18n.getMessage('alert_StorageQuota');
+				} else if (error.message && error.message.includes('MAX_ITEMS')) {
+					alertMessage = chrome.i18n.getMessage('alert_StorageQuota'); // Often related if splitting failed
+				} else if (error.message && error.message.includes('MAX_WRITE_OPERATIONS_PER')) {
+					alertMessage = chrome.i18n.getMessage('alert_StorageThrottle');
 				}
+				alert(alertMessage + suffix);
 
-				// something went wrong, force local storage and restore the backup
-				await chrome.storage.local.set({ 'useLocalStorage': true });
-				await putBlacklistedItems(backupBlacklistedItems, false);
-				return;
+				// If sync failed, force switch to local and retry ONLY ONCE without recovery loop
+				if (isSync) {
+					logWarn('Sync save failed. Forcing switch to local storage and attempting recovery.');
+					await chrome.storage.local.set({ 'useLocalStorage': true });
+					await putBlacklistedItems(backupBlacklistedItems, false); // Use backup, prevent recovery loop
+				} else {
+					logError('Local storage save also failed. Cannot recover.');
+					// Maybe restore the in-memory cache from backup?
+					modifyBlacklistedItems(backupBlacklistedItems);
+				}
+			} else {
+				logError('Recovery attempt failed or was disabled. Blacklist may not be saved correctly.');
+				// Restore cache from backup if recovery wasn't attempted or failed
+				modifyBlacklistedItems(backupBlacklistedItems);
 			}
-
 		} else {
+			logInfo('Blacklist successfully saved to', mode, 'storage.');
+			// Synchronize new items among tabs (send the original structure)
+			await syncBlacklistedItems(itemsToStore); // Send the data that was intended to be saved
 
-			// synchronize new items among tabs
-			await syncBlacklistedItems(items);
-
-			// update backup cache
-			if (attemptRecovery !== false) {
-
-				backupBlacklistedItems = backupItems;
-				logVerbose('Created backup of blacklist:', backupBlacklistedItems);
+			// Update backup cache ONLY on successful save
+			if (attemptRecovery) { // Only update backup if it wasn't a recovery attempt itself
+				backupBlacklistedItems = cloneBlacklistItems(itemsToStore); // Backup the data that was successfully saved
+				logVerbose('Created new backup of blacklist.');
 			}
-
-			logInfo('Added to blacklist:', items);
 		}
-
-		return items;
 	}
 
 	/**
 	 * Informs all tabs (including the one that invokes this function) about the provided items in order to keep them synchronized.
 	 */
 	async function syncBlacklistedItems(items) {
-
+		logVerbose('Broadcasting blacklist update to other tabs...');
 		try {
-			await chrome.runtime.sendMessage({ blacklistedItems: items, storage: false });
+			// Send message without waiting for responses from all tabs
+			chrome.runtime.sendMessage({ blacklistedItems: items, storage: false }).catch(error => {
+				// Log errors if sending fails (e.g., no listeners), but don't block
+				if (error.message.includes("Could not establish connection")) {
+					logVerbose("No other active Twitch tabs to sync with.");
+				} else {
+					logError('Error broadcasting blacklist sync message:', error);
+				}
+			});
 		}
-		catch {
-			logError('Failed to synchronize all tabs.', error);
+		catch (error) { // Catch synchronous errors during send setup
+			logError('Failed to initiate blacklist synchronization:', error);
 		}
 	}
 
@@ -2701,40 +2360,41 @@
 		logTrace('invoking init()');
 
 		if (initRun === true) {
-
-			return logWarn('Aborting invocation of init(), because the extension is already initialized.');
+			return logWarn('Aborting init(), already initialized.');
 		}
 		initRun = true;
+		logInfo('Extension Core Initialization Starting...');
 
-		// prepare blacklist (regardless of the current page support)
+		// Prepare blacklist (regardless of the current page support)
 		const blacklistedItems = await getBlacklistedItems();
-		logTrace('invoked getBlacklistedItems()', blacklistedItems);
 
-		// initialize defaults in blacklisted items collection
-		initBlacklistedItems(blacklistedItems);
+		// Initialize defaults and cache blacklisted items from storage
+		modifyBlacklistedItems(blacklistedItems); // This also initializes if empty and builds caches
+		logInfo('Blacklist loaded and caches built. Items:',
+			Object.keys(storedBlacklistedItems.categories || {}).length, 'categories,',
+			Object.keys(storedBlacklistedItems.channels || {}).length, 'channels,',
+			Object.keys(storedBlacklistedItems.tags || {}).length, 'tags,',
+			(storedBlacklistedItems.titles || []).length, 'titles.'
+		);
 
-		// cache blacklisted items from storage
-		storedBlacklistedItems = blacklistedItems;
-		modifyBlacklistedItems(blacklistedItems);
-		logInfo('Blacklist loaded:', blacklistedItems);
-
-		backupBlacklistedItems = cloneBlacklistItems(blacklistedItems);
+		// Create initial backup
+		backupBlacklistedItems = cloneBlacklistItems(storedBlacklistedItems);
 
 		/* BEGIN: root */
-
+			// Ensure rootNode is set, default to document if needed
 			const rootNodeSelector = '#root';
-			rootNode               = document.querySelector(rootNodeSelector);
-
-			if (rootNode === null) {
-
-				logError('Root not found. Expected:', rootNodeSelector);
+			rootNode = document.querySelector(rootNodeSelector);
+			if (!rootNode) {
+				logWarn('Root node (#root) not found. Using document as rootNode.');
 				rootNode = document;
+			} else {
+				logVerbose('Root node found:', rootNode);
 			}
-
 		/* END: root */
 
-		// start filtering
-		onPageChange(currentPage);
+		// Start page processing
+		onPageChange(currentPage); // Trigger initial page processing
+		logInfo('Extension Core Initialization Complete.');
 	}
 
 	/**
@@ -2749,84 +2409,22 @@
 			'hideFollowing',
 			'hideReruns'
 		];
+		let result = {}; // Default empty object
 
-		const result = await storageGet(stateKeys);
-
-		// enabled
-		if (typeof result['enabled'] === 'boolean') {
-
-			enabled = result['enabled'];
-
-			if (result['enabled'] === true) {
-
-				logVerbose('Extension\'s enabled state:', result['enabled']);
-
-			} else {
-
-				logVerbose('Extension\'s enabled state:', result['enabled']);
-			}
-
-		} else {
-
-			logVerbose('Extension\'s enabled state unknown, assuming:', true);
+		try {
+			result = await storageGet(stateKeys);
+			if (!result) result = {}; // Ensure result is an object even if storageGet returns null/undefined
+		} catch(error) {
+			logError("Error getting extension state from storage:", error);
 		}
 
-		// renderButtons
-		if (typeof result['renderButtons'] === 'boolean') {
+		// Set defaults first, then override if value exists in storage result
+		enabled = (typeof result['enabled'] === 'boolean') ? result['enabled'] : true;
+		renderButtons = (typeof result['renderButtons'] === 'boolean') ? result['renderButtons'] : true;
+		hideFollowing = (typeof result['hideFollowing'] === 'boolean') ? result['hideFollowing'] : true;
+		hideReruns = (typeof result['hideReruns'] === 'boolean') ? result['hideReruns'] : false;
 
-			renderButtons = result['renderButtons'];
-
-			if (result['renderButtons'] === true) {
-
-				logVerbose('Extension\'s render buttons state:', result['renderButtons']);
-
-			} else {
-
-				logVerbose('Extension\'s render buttons state:', result['renderButtons']);
-			}
-
-		} else {
-
-			logVerbose('Extension\'s render buttons state unknown, assuming:', true);
-		}
-
-		// hideFollowing
-		if (typeof result['hideFollowing'] === 'boolean') {
-
-			hideFollowing = result['hideFollowing'];
-
-			if (result['hideFollowing'] === true) {
-
-				logVerbose('Extension\'s hide following state:', result['hideFollowing']);
-
-			} else {
-
-				logVerbose('Extension\'s hide following state:', result['hideFollowing']);
-			}
-
-		} else {
-
-			logVerbose('Extension\'s render hide following state unknown, assuming:', true);
-		}
-
-		// hideReruns
-		if (typeof result['hideReruns'] === 'boolean') {
-
-			hideReruns = result['hideReruns'];
-
-			if (result['hideReruns'] === true) {
-
-				logVerbose('Extension\'s hide reruns state:', result['hideReruns']);
-
-			} else {
-
-				logVerbose('Extension\'s hide reruns state:', result['hideReruns']);
-			}
-
-		} else {
-
-			logVerbose('Extension\'s render hide reruns state unknown, assuming:', false);
-		}
+		logInfo('Extension State Initialized:', { enabled, renderButtons, hideFollowing, hideReruns });
 	}
 
 	/**
@@ -2835,15 +2433,14 @@
 	window.addEventListener('DOMContentLoaded', async function callback_windowLoad() {
 		logTrace('event invoked: window.DOMContentLoaded()');
 
-		// init extension's state
+		// Init extension's state first
 		await initExtensionState();
 
 		if (enabled === false) {
-
-			return logWarn('Page initialization aborted. Extension is not enabled.');
+			return logWarn('Extension is disabled. Aborting page initialization.');
 		}
 
-		logInfo('Started initialization on page:', currentPage);
+		// Start core initialization
 		await init();
 	});
 
