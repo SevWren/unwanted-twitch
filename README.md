@@ -49,11 +49,11 @@
 This forked repository includes performance optimizations to the `directory.js` file, specifically designed to improve the extension's handling of dynamic content loading on pages like `https://www.twitch.tv/directory/category/games-demos`. Below is a detailed changelog of the modifications made, highlighting the differences from the original repository:
 
 **April 24, 2025**
-
 *   **Added date string to export filename in `blacklist.js`**: The export filename now includes the current date in the format `day-month-year`.
 *   **Optimized blacklist import/export in `blacklist.js`**: Improved the import and export functionality for blacklists, including error handling and user feedback.
 *   **Updated storage size limits in `README.md`**: Clarified the storage size limits for cloud synchronization and local storage.
 *   **Improved performance in `directory.js`**: Implemented various performance optimizations, including debounced scroll event handling, batched DOM updates, and optimized selectors.
+*   **[REVERTED] Changes made after 11:00 a.m. CST**: Substantial code edits made while debugging the Twitch extension—specifically related to stream card detection—have been reverted. At some point, the cloud sync feature was unknowingly enabled, which blocks all local and cloud-side changes without warning. This caused edits to silently fail, reverting the blacklist and other script data back to previous versions despite appearing saved. Numerous attempted fixes only deepened the inconsistency. To maintain a clean baseline and avoid further instability, all changes from that period have been rolled back.
 
 **April 18, 2025**
 - **Debounced Scroll Event Handling**: Added debouncing to the `onScroll` function to reduce the frequency of filtering operations during rapid scrolling, preventing performance bottlenecks.
