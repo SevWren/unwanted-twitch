@@ -76,28 +76,30 @@
 
 		// renderButtons
 		if (typeof request['renderButtons'] === 'boolean') {
-
-			await toggleHideButtonsVisibility(request['renderButtons']);
+			try {
+				await toggleHideButtonsVisibility(request['renderButtons']);
+			} catch (error) {
+				logError("Error toggling button visibility:", error);
+			}
 			return true;
 		}
 
 		// extension
 		if (typeof request.extension === 'string') {
-
-			if (request.extension === 'disable') {
-
-				enabled = false;
-				await storageSet({ 'enabled': enabled });
-
-				window.location.reload();
-				return true;
-
-			} else if (request.extension === 'enable') {
-
-				enabled = true;
-				await storageSet({ 'enabled': enabled });
-
-				window.location.reload();
+			try {
+				if (request.extension === 'disable') {
+					enabled = false;
+					await storageSet({ 'enabled': enabled });
+					window.location.reload();
+					return true;
+				} else if (request.extension === 'enable') {
+					enabled = true;
+					await storageSet({ 'enabled': enabled });
+					window.location.reload();
+					return true;
+				}
+			} catch (error) {
+				logError("Error enabling/disabling extension:", error);
 				return true;
 			}
 		}
@@ -107,61 +109,99 @@
 
 			const items     = request.blacklistedItems;
 			const cacheOnly = (request.storage === false);
+			let saveAttempted = false; // Flag if this tab tried to save
+			let saveResult = { success: false, switchedToLocal: false }; // Store result object
 
-			if (cacheOnly) {
-
-				logInfo('Synchronizing new blacklist.', items);
-
-				// store new items in cache
-				modifyBlacklistedItems(items);
-
-			} else {
-
-				if (
-					(typeof request.dispatcherIndex !== 'number') ||
-					(request.dispatcherIndex <= 0)
-				) {
-
-					logInfo('Storing new blacklist.', items);
-					await putBlacklistedItems(items);
-
+			try {
+				if (cacheOnly) {
+					logInfo('Synchronizing new blacklist (cache only).', items);
+					modifyBlacklistedItems(items);
+					// No filtering needed here for cache-only sync
 				} else {
+					// This is a request to SAVE and filter
+					if (
+						(typeof request.dispatcherIndex !== 'number') ||
+						(request.dispatcherIndex <= 0)
+					) {
+						// This tab is the primary one responsible for saving
+						saveAttempted = true;
+						logInfo('Storing new blacklist in storage.', items);
 
-					logInfo('Ignoring request to store new blacklist, because the request is already being processed by another tab.', request);
+						// --- AWAIT the save operation AND get result object ---
+						saveResult = await putBlacklistedItems(items);
+						// --- END AWAIT ---
+
+						if (saveResult.success) {
+							logInfo('Save successful, invoking filters...');
+							// --- Filter AFTER successful save ---
+							if (
+								(currentPageType !== 'following') ||
+								(hideFollowing === true)
+							) {
+								filterDirectory();
+							} else {
+								filterDirectory('recommended');
+								filterDirectory('unprocessed', false);
+							}
+							if (hideFollowing === true) {
+								filterSidebar();
+							} else {
+								filterSidebar('recommended');
+							}
+							// --- END Filter ---
+						} else {
+							logError("putBlacklistedItems reported failure. Filters not invoked.");
+						}
+
+					} else {
+						// This tab received the message but isn't the primary saver (dispatcherIndex > 0)
+						logInfo('Ignoring request to store new blacklist (already processed by another tab), synchronizing cache.', request);
+						modifyBlacklistedItems(items);
+						// Re-filter based on the potentially updated cache from the primary tab
+						logInfo('Cache synchronized, invoking filters based on updated cache...');
+						if (
+							(currentPageType !== 'following') ||
+							(hideFollowing === true)
+						) {
+							filterDirectory();
+						} else {
+							filterDirectory('recommended');
+							filterDirectory('unprocessed', false);
+						}
+						if (hideFollowing === true) {
+							filterSidebar();
+						} else {
+							filterSidebar('recommended');
+						}
+					}
 				}
+			} catch (error) {
+				logError("Error processing blacklistedItems message:", error);
+				saveResult = { success: false, switchedToLocal: false }; // Ensure failure on error
 			}
 
-			// invoke directory filter
-			if (
-				(currentPageType !== 'following') ||
-				(hideFollowing === true)
-			) {
-
-				filterDirectory();
-
+			// --- SEND RESPONSE ---
+			// Only the tab that attempted the save sends back the detailed response.
+			if (saveAttempted) {
+				 logVerbose(`Save attempted by this tab. Result:`, saveResult, `. Sending confirmation response.`);
+				 // Return the result object from putBlacklistedItems
+				 return Promise.resolve(saveResult);
 			} else {
-
-				// invoke directory filter for recommended section
-				filterDirectory('recommended');
-
-				// mark remaining items as being processed
-				filterDirectory('unprocessed', false);
+				 // If this tab didn't save (cacheOnly, or dispatcherIndex > 0),
+				 // still need to return true or Promise for async listener.
+				 logVerbose("Save not processed by this tab or cache-only update. Resolving listener.");
+				 return true;
 			}
+			// --- END SEND RESPONSE ---
+		} // <-- This brace correctly closes the "if (typeof request.blacklistedItems === 'object')" block
 
-			// invoke sidebar filter
-			if (hideFollowing === true) {
-
-				filterSidebar();
-
-			} else {
-
-				filterSidebar('recommended');
-			}
-
-			return true;
-		}
+		// --- REMOVED MISPLACED CODE BLOCK ---
+		// The filter logic and return true below were incorrectly placed here.
+		// They are correctly handled *inside* the 'if (blacklistedItems)' block above.
+		// --- END REMOVED MISPLACED CODE BLOCK ---
 
 		logError('Unknown command received. The following command was ignored:', request);
+		// Must return true or a Promise for async listeners if not handled above.
 		return true;
 	});
 
@@ -648,6 +688,10 @@
 	 * Returns all item nodes matching the specified mode in the directory of the current page.
 	 * UPDATE: Now selects the main *container* div for each item type.
 	 */
+	/**
+	 * Returns all item nodes matching the specified mode in the directory of the current page.
+	 * UPDATE: Now selects the main *container* div for each item type.
+	 */
 	function getDirectoryItemNodes(mode) {
 		logTrace('invoking getDirectoryItemNodes($)', mode);
 
@@ -672,13 +716,19 @@
 		let selectors = [];
 		let prefix = (mode === 'recommended') ? '.find-me ' : '';
 
-		// Selector for Stream Cards (Game, Channels, Following, Explore, Frontpage)
+		// --- CORRECT: Selector for Stream Cards (Game, Channels, Following, Explore, Frontpage) ---
 		// Targets the main container div identified in HTML analysis
 		selectors.push(`${prefix}div.Layout-sc-1xcs6mc-0.jCGmCy${suffix}`);
+		// --- END CORRECT ---
 
-		// Selector for Category Cards (Categories page)
-		// Targets the main container div identified in HTML analysis
-		selectors.push(`${prefix}div.Layout-sc-1xcs6mc-0.ScTowerItem-sc-1sjzzes-2${suffix}`);
+		// --- CORRECT: Selector for Category Cards (Main /directory page) ---
+		// Use the container div identified in the new HTML analysis
+		selectors.push(`${prefix}div.game-card${suffix}`);
+		// --- END CORRECT ---
+
+		// --- REMOVED: Obsolete category card selector based on older HTML ---
+		// selectors.push(`${prefix}div[data-target="directory-page__card-container"]${suffix}`);
+		// --- END REMOVED ---
 
 		// --- TODO: Add selectors for VOD and Clip cards here when their structure is known ---
 		// Example: selectors.push(`${prefix}div.vod-card-container-selector${suffix}`);
@@ -691,13 +741,24 @@
 			return [];
 		}
 
-		const nodes       = mainNode.querySelectorAll(combinedSelector);
+		// Use try-catch for querySelectorAll as invalid selectors can throw errors
+		let nodes = [];
+		try {
+			nodes = mainNode.querySelectorAll(combinedSelector);
+		} catch (error) {
+			logError('Error executing querySelectorAll with selector:', combinedSelector, error);
+			return []; // Return empty array on error
+		}
+
 		const nodesLength = nodes.length;
 
 		if (nodesLength > 0) {
 			logTrace('Found ' + nodesLength + ' container nodes in directory using selector:', combinedSelector, nodes);
 		} else {
-			logTrace('Unable to find container nodes in directory. Expected selector:', combinedSelector);
+			// Only log trace if we expected results (e.g., not on an empty page)
+			if (mainNode.querySelector('main > div > div:not(:empty)')) { // Basic check if main area has *some* content
+				logTrace('Unable to find container nodes in directory. Expected selector:', combinedSelector);
+			}
 		}
 
 		return nodes;
@@ -808,11 +869,13 @@
 
 		if (!containerNode) { return null; }
 
-		// Check if it's a category card container
-		if (containerNode.matches('div.Layout-sc-1xcs6mc-0.ScTowerItem-sc-1sjzzes-2')) {
+		// Check if it's a category card container - Updated selector
+		if (containerNode.matches('div[data-target="directory-page__card-container"]')) {
+			// Find the link node *within* the container
 			const linkNode = containerNode.querySelector('a[data-a-target="tw-box-art-card-link"]');
 			if (linkNode) {
-				return readCategory(containerNode, linkNode); // Pass both container and link
+				// Pass the container node, as category details are siblings/children of the link's parent within the container
+				return readCategory(containerNode, linkNode);
 			} else {
 				logWarn('Could not find link node within category container:', containerNode);
 				return null;
@@ -931,17 +994,26 @@
 		};
 
 		/* BEGIN: name */
-			const nameNode = containerNode.querySelector('article h3[title]'); // Target h3 inside article
+			// Updated selector: Find the h2 title within the specific link structure
+			const nameNode = containerNode.querySelector('a.ScCoreLink-sc-16kq0mq-0.jRnnHH h2[title]');
 			result.name = nameNode?.textContent?.trim() ?? '';
 			result.category = result.name; // For categories, name and category are the same
 			if (!result.name) {
-				return logError('Unable to determine name of category.', containerNode);
+				// Try fallback selector if the first one fails (e.g., structure variation)
+				const fallbackNameNode = containerNode.querySelector('.tw-card-body h2[title]');
+				result.name = fallbackNameNode?.textContent?.trim() ?? '';
+				result.category = result.name;
+				if (!result.name) {
+					return logError('Unable to determine name of category using primary or fallback selector.', containerNode);
+				}
+				logVerbose('Used fallback selector for category name.');
 			}
 		/* END: name */
 
 		/* BEGIN: tags */
 			if (findTags) {
-				const tagContainer = containerNode.querySelector('article .Layout-sc-1xcs6mc-0.fLNVxt'); // Target specific tag container div
+				// Updated selector for the tag container div
+				const tagContainer = containerNode.querySelector('div.InjectLayout-sc-1i43xsx-0.gNgtQs');
 				if (tagContainer) {
 					result.tags = readTags(tagContainer);
 				} else {
@@ -2228,106 +2300,143 @@
 		// );
 	}
 
-	/**
-	 * Stores all blacklisted items in the storage.
+/**
+	 * Stores all blacklisted items in the storage. Attempts sync first if enabled,
+	 * falls back gracefully to local storage for quota errors without data loss.
+	 * Returns true on success, false on critical failure.
 	 */
-	async function putBlacklistedItems(items, attemptRecovery = true) { // Default attemptRecovery to true
-		logTrace('invoking putBlacklistedItems($, $)', items, attemptRecovery);
+	async function putBlacklistedItems(items) { // Removed attemptRecovery flag, logic is now built-in
+		logTrace('invoking putBlacklistedItems($)', items);
 
 		if (typeof items !== 'object' || items === null) {
 			logError('putBlacklistedItems called with invalid items:', items);
-			return; // Don't proceed with invalid data
+			return false; // Indicate failure
 		}
 
-		const mode   = await getStorageMode();
-		const isSync = (mode === 'sync');
-
-		if (attemptRecovery === false) {
-			logWarn('Attempting to restore backup to storage:', items);
-		}
-
-		// Always use a clone to avoid modifying the live cache during async ops
+		// Use a clone to avoid modifying the live cache during async ops
 		const itemsToStore = initBlacklistedItems(cloneBlacklistItems(items));
-
+		let currentMode = await getStorageMode(); // Check the user's desired mode
 		let dataToStore = { 'blacklistedItems': itemsToStore };
-		let requiresSplitting = false;
+		let targetMode = currentMode; // The mode we will actually write to
+		let switchedToLocal = false; // Flag if we auto-switched
 
-		if (isSync) {
-			const requiredSize = measureStoredSize(dataToStore);
-			if (requiredSize > storageSyncMaxSize) {
-				logWarn('Blacklist (' + requiredSize + ' bytes) exceeds sync limit per item (' + storageSyncMaxSize + '). Splitting...');
-				requiresSplitting = true;
-				dataToStore = splitBlacklistItems(itemsToStore); // Use the cloned, initialized data
-				if (Object.keys(dataToStore).length > storageSyncMaxKeys) {
-					logError('Cannot save blacklist: Number of fragments (' + Object.keys(dataToStore).length + ') exceeds MAX_ITEMS (' + storageSyncMaxKeys + ').');
-					// Optionally, attempt to save to local storage instead or alert user
-					alert(chrome.i18n.getMessage('alert_StorageQuota')); // Inform user
-					// Force switch to local storage and try saving there
-					await chrome.storage.local.set({ 'useLocalStorage': true });
-					logWarn('Forcing switch to local storage due to sync quota limits.');
-					await putBlacklistedItems(items, false); // Retry with local, don't loop recovery
-					return; // Exit after attempting local save
+		logVerbose(`Starting save. User desired mode: ${currentMode}`);
+
+		// --- Attempt Sync Logic (if initially enabled) ---
+		if (currentMode === 'sync') {
+			logVerbose("Attempting to prepare data for sync storage.");
+			let requiresSplitting = false;
+			try {
+				const requiredSize = measureStoredSize(dataToStore);
+
+				// Check TOTAL size limit first (most likely failure for large imports)
+				if (requiredSize > (chrome.storage.sync.QUOTA_BYTES || 102400) * 0.95) { // Check against 95% of total quota
+					logWarn(`Blacklist size (${requiredSize} bytes) likely exceeds total sync quota (${chrome.storage.sync.QUOTA_BYTES || 102400} bytes).`);
+					throw new Error("QUOTA_BYTES_TOTAL_EXCEEDED"); // Simulate quota error
 				}
-				logVerbose('Splitting of blacklist completed. Fragments:', Object.keys(dataToStore).length);
-			}
-		}
 
-		// Clear previous data structure (either single key or fragments) before setting new data
-		const keysToRemove = ['blacklistedItems'];
-		for (let i = 0; i < storageMaxFragments; i++) { // Use defined constant
-			keysToRemove.push('blItemsFragment' + i);
-		}
-		logVerbose('Clearing previous blacklist keys:', keysToRemove);
-		await storageRemove(keysToRemove); // Ensure removal finishes before setting
-
-		// Now set the new data (either single object or fragments)
-		logVerbose('Attempting to save data to', mode, 'storage:', dataToStore);
-		const error = await storageSet(dataToStore);
-
-		// Handle potential errors
-		if (error) { // Check if error object exists
-			logError('Error saving blacklist to', mode, 'storage:', error.message || error);
-			if (attemptRecovery) { // Only alert and retry once
-				const suffix = ('\n\nStorage Service Error:\n' + (error.message || 'Unknown error'));
-				let alertMessage = chrome.i18n.getMessage('alert_StorageIssue'); // Default message
-
-				if (error.message && error.message.includes('QUOTA_BYTES')) {
-					alertMessage = chrome.i18n.getMessage('alert_StorageQuota');
-				} else if (error.message && error.message.includes('MAX_ITEMS')) {
-					alertMessage = chrome.i18n.getMessage('alert_StorageQuota'); // Often related if splitting failed
-				} else if (error.message && error.message.includes('MAX_WRITE_OPERATIONS_PER')) {
-					alertMessage = chrome.i18n.getMessage('alert_StorageThrottle');
+				// Check per-item size limit and attempt splitting if needed
+				if (requiredSize > storageSyncMaxSize) {
+					logWarn(`Blacklist size (${requiredSize} bytes) exceeds per-item sync limit (${storageSyncMaxSize}). Splitting...`);
+					requiresSplitting = true;
+					dataToStore = splitBlacklistItems(itemsToStore);
+					if (Object.keys(dataToStore).length > storageSyncMaxKeys) {
+						logError(`Cannot save to sync: Number of fragments (${Object.keys(dataToStore).length}) exceeds MAX_ITEMS (${storageSyncMaxKeys}).`);
+						throw new Error("QUOTA_BYTES_PER_ITEM_EXCEEDED"); // Simulate quota error
+					}
+					logVerbose('Splitting of blacklist completed. Fragments:', Object.keys(dataToStore).length);
 				}
-				alert(alertMessage + suffix);
+				// If we reach here, data is prepared for sync (or didn't need splitting)
+				targetMode = 'sync';
 
-				// If sync failed, force switch to local and retry ONLY ONCE without recovery loop
-				if (isSync) {
-					logWarn('Sync save failed. Forcing switch to local storage and attempting recovery.');
+			} catch (error) {
+				// Handle QUOTA errors specifically by switching to local
+				if (error.message?.includes("QUOTA_BYTES") || error.message?.includes("MAX_ITEMS")) {
+					logWarn(`Sync quota error (${error.message}). Switching to local storage automatically.`);
+					alert("Your blacklist is too large for cloud sync.\nSaving to local storage instead.\nCloud sync has been disabled.");
+
+					// Force switch to local mode
 					await chrome.storage.local.set({ 'useLocalStorage': true });
-					await putBlacklistedItems(backupBlacklistedItems, false); // Use backup, prevent recovery loop
+					targetMode = 'local';
+					switchedToLocal = true;
+					// IMPORTANT: Use the UNSPLIT data for local storage
+					dataToStore = { 'blacklistedItems': itemsToStore };
+					logVerbose("Data reset to unsplit object for local storage save.");
 				} else {
-					logError('Local storage save also failed. Cannot recover.');
-					// Maybe restore the in-memory cache from backup?
-					modifyBlacklistedItems(backupBlacklistedItems);
+					// Handle other unexpected errors during preparation
+					logError("Unexpected error preparing data for sync storage:", error);
+					alert("An unexpected error occurred while preparing the blacklist for saving. Please check the console.");
+					return false; // Critical failure
 				}
-			} else {
-				logError('Recovery attempt failed or was disabled. Blacklist may not be saved correctly.');
-				// Restore cache from backup if recovery wasn't attempted or failed
-				modifyBlacklistedItems(backupBlacklistedItems);
 			}
 		} else {
-			logInfo('Blacklist successfully saved to', mode, 'storage.');
-			// Synchronize new items among tabs (send the original structure)
-			await syncBlacklistedItems(itemsToStore); // Send the data that was intended to be saved
+			// User already had local storage selected
+			targetMode = 'local';
+			dataToStore = { 'blacklistedItems': itemsToStore }; // Ensure it's the standard object
+		}
+
+		// --- Storage Write Operation (to targetMode) ---
+		logInfo(`Attempting to save blacklist to ${targetMode} storage.`);
+		let success = false;
+		try {
+			// Define keys to remove based on the *target* storage format
+			const keysToRemove = ['blacklistedItems']; // Always remove the single key possibility
+			if (targetMode === 'sync' && Object.keys(dataToStore)[0]?.startsWith('blItemsFragment')) {
+				// If saving fragments to sync, ensure old fragments are cleared
+				for (let i = 0; i < storageMaxFragments; i++) {
+					keysToRemove.push('blItemsFragment' + i);
+				}
+			} else if (targetMode === 'local') {
+				// If saving single object to local, ensure old fragments (if any) are cleared
+				for (let i = 0; i < storageMaxFragments; i++) {
+					keysToRemove.push('blItemsFragment' + i);
+				}
+			}
+
+			logVerbose(`Targeting ${targetMode}. Keys to remove:`, keysToRemove);
+			logVerbose('Data to store:', dataToStore);
+
+			// Use the specific storage API for the target mode
+			const storageArea = chrome.storage[targetMode];
+
+			// Remove old keys from the target storage area
+			await storageArea.remove(keysToRemove);
+			logVerbose(`Removed old keys from ${targetMode}.`);
+
+			// Set the new data in the target storage area
+			await storageArea.set(dataToStore);
+			// Check chrome.runtime.lastError after the 'set' call
+			if (chrome.runtime.lastError) {
+				throw chrome.runtime.lastError; // Throw the error to be caught below
+			}
+
+			// SUCCESS CASE
+			logInfo(`Blacklist successfully saved to ${targetMode} storage.`);
+			success = true;
 
 			// Update backup cache ONLY on successful save
-			if (attemptRecovery) { // Only update backup if it wasn't a recovery attempt itself
-				backupBlacklistedItems = cloneBlacklistItems(itemsToStore); // Backup the data that was successfully saved
-				logVerbose('Created new backup of blacklist.');
-			}
+			backupBlacklistedItems = cloneBlacklistItems(itemsToStore);
+			logVerbose('Created new backup of blacklist.');
+
+			// Synchronize cache with other tabs (non-blocking)
+			syncBlacklistedItems(itemsToStore);
+
+		} catch (error) {
+			// Catch errors from storage.remove or storage.set
+			logError(`Error saving blacklist to ${targetMode} storage:`, error.message || error);
+			success = false; // Mark as failure
+
+			// Provide feedback and restore cache from backup
+			alert(`Failed to save blacklist to ${targetMode} storage.\nError: ${error.message || 'Unknown error'}\nRestoring previous blacklist state.`);
+			modifyBlacklistedItems(backupBlacklistedItems); // Restore cache
 		}
+
+		// Return final success state (true/false)
+		// Include whether a switch occurred, blacklist.js might want to update UI
+		return { success: success, switchedToLocal: switchedToLocal };
 	}
 
+	
 	/**
 	 * Informs all tabs (including the one that invokes this function) about the provided items in order to keep them synchronized.
 	 */

@@ -1,0 +1,8 @@
+https://github.com/kwaschny/unwanted-twitch
+
+blacklist.html
+	For blacklist popup, when user clicks on export, the default filename currently is `UnwantedTwitch_Blacklist.json`
+	**Add the feature of adding the current date in the save file name
+
+
+

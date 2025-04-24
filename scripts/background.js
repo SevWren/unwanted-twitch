@@ -202,10 +202,17 @@ async function setInitialIconStates() {
             }
         });
 
-        const nonTwitchTabs = await chrome.tabs.query({ url: '*://*/*', notUrlPatterns: [twitchUrl + '*'] });
-        nonTwitchTabs.forEach(tab => {
-            if (tab.id) {
-                chrome.action.disable(tab.id).catch(e => logWarn(`Failed initial disable for tab ${tab.id}: ${e.message}`));
+        // Query all tabs and then filter to disable non-Twitch ones
+        const allTabs = await chrome.tabs.query({ url: '*://*/*' });
+        allTabs.forEach(tab => {
+            // Check if tab exists, has an ID, has a URL, and the URL does not start with twitchUrl
+            if (tab && tab.id && tab.url && !tab.url.startsWith(twitchUrl)) {
+                chrome.action.disable(tab.id).catch(e => {
+                    // Ignore errors for tabs that might have closed since the query or other benign issues
+                    if (e.message && !e.message.toLowerCase().includes('no tab with id') && !e.message.toLowerCase().includes('the tab was discarded')) {
+                        logWarn(`Failed initial disable for non-Twitch tab ${tab.id}: ${e.message}`);
+                    }
+                });
             }
         });
     } catch (error) {

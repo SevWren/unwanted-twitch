@@ -1,4 +1,11 @@
-﻿// jshint esversion: 6
+﻿/**
+ * Creates a table row for a blacklist item with a key and a remove button.
+ * 
+ * @param {string} key - The key/value to be displayed in the first cell of the row
+ * @returns {HTMLTableRowElement} A table row element representing a blacklist item
+ */
+
+// jshint esversion: 6
 // jshint -W069
 
 /* BEGIN: runtime cache */
@@ -47,6 +54,16 @@ function addItem(table, key) {
 	return true;
 }
 
+/**
+ * Adds the provided items to the specified table. If the provided items is not
+ * an object, it simply returns the result of calling handleItemCount on the
+ * table. Otherwise, it sorts the items (case insensitive), creates a table row
+ * for each item, and appends them to the table.
+ *
+ * @param {!Element} table the table to add the items to
+ * @param {!Object.<string, *>=} items the items to add to the table
+ * @return {boolean} the result of calling handleItemCount on the table
+ */
 function addItems(table, items) {
 
 	if (typeof items !== 'object') {
@@ -78,6 +95,12 @@ function addItems(table, items) {
 	return handleItemCount(table);
 }
 
+/**
+ * Removes all items from the provided table.
+ *
+ * @param {!Element} table the table to clear
+ * @return {number} the number of items in the table after clearing
+ */
 function clearItems(table) {
 
 	const rows       = table.querySelectorAll('tr.item');
@@ -100,6 +123,16 @@ function itemExists(table, key) {
 	return (presentKeys.indexOf(key) >= 0);
 }
 
+/**
+ * Event handler for when the user adds a new item to the blacklist.
+ *
+ * This function trims the input string, removes consecutive whitespace, converts
+ * quotes, checks if the string is a valid regular expression, and adds the string
+ * to the table if it is not empty.
+ *
+ * @param {HTMLTableRowElement} row - The table row containing the input element
+ * @param {boolean} [byUser=true] - Whether the function was called by a user action
+ */
 function onAddItem(row, byUser = true) {
 
 	const input = row.querySelector('input');
@@ -151,6 +184,12 @@ function onAddItem(row, byUser = true) {
 	}
 }
 
+/**
+ * Event handler for when the user removes an item from the blacklist.
+ *
+ * This function removes the row from the table and updates the count and
+ * visibility of the "no items" row.
+ */
 function onRemoveItem() {
 
 	const row   = this.parentNode.parentNode;
@@ -162,6 +201,13 @@ function onRemoveItem() {
 	flashSaveButton();
 }
 
+/**
+ * Updates the count of items in the table's head and shows/hides
+ * "no items" row and "Clear" button.
+ *
+ * @param {Element} table - The table that contains the items.
+ * @return {Number} The number of items in the table.
+ */
 function handleItemCount(table) {
 
 	const count = table.querySelectorAll('tr.item').length;
@@ -172,7 +218,6 @@ function handleItemCount(table) {
 	// remove row with a note about having no items
 	const emptyRow = table.querySelector('tr.empty');
 	if (emptyRow !== null) {
-
 		emptyRow.remove();
 	}
 
@@ -201,6 +246,14 @@ function handleItemCount(table) {
 	return count;
 }
 
+/**
+ * Collects keys from elements with a `data-key` attribute within a table and
+ * stores them in an object. Each key is mapped to the value `1`.
+ *
+ * @param {Element} table - The table element from which to gather keys.
+ * @returns {Object} An object where each key from the table is mapped to `1`.
+ */
+
 function gatherKeysMap(table) {
 
 	let result = {};
@@ -216,8 +269,15 @@ function gatherKeysMap(table) {
 
 	return result;
 }
-function gatherKeysArray(table) {
 
+function gatherKeysArray(table) {
+/**
+ * Collects keys from elements with a `data-key` attribute within a table and
+ * returns them in an array.
+ *
+ * @param {Element} table - The table element from which to gather keys.
+ * @returns {Array} An array of keys from the table.
+ */
 	let result = [];
 
 	let nodes = table.querySelectorAll('[data-key]');
@@ -232,42 +292,138 @@ function gatherKeysArray(table) {
 	return result;
 }
 
+/**
+ * Saves the current blacklist configuration and updates the live filter.
+ *
+ * Checks the current state of the blacklist settings checkboxes and saves
+ * them to the storage. Adds all pending user inputs and updates the live
+ * filter using the content script.
+ *
+ * @returns {Promise} A promise that resolves when saving is done.
+ */
+
+/**
+ * Saves the current blacklist configuration and updates the live filter.
+ *
+ * Checks the current state of the blacklist settings checkboxes and saves
+ * them to the storage. Adds all pending user inputs and updates the live
+ * filter using the content script. Waits for confirmation from the content
+ * script before closing the tab. Handles sync quota errors gracefully by
+ * potentially switching to local storage.
+ *
+ * @returns {Promise} A promise that resolves when saving is done or fails.
+ */
 async function onSave() {
 
-	// storage mode (store in local storage only)
-	await chrome.storage.local.set({ 'useLocalStorage': !useSyncStorageCheckbox.checked });
+	// Disable buttons during save
+	toggleLoadingScreen(true); // Show loading overlay and disable buttons
 
-	// hide following
-	await storageSet({ 'hideFollowing': hideFollowingCheckbox.checked });
+	try {
+		// Save settings first (these are small and should generally succeed)
+		await chrome.storage.local.set({ 'useLocalStorage': !useSyncStorageCheckbox.checked });
+		await storageSet({ 'hideFollowing': hideFollowingCheckbox.checked });
+		await storageSet({ 'hideReruns': hideRerunsCheckbox.checked });
 
-	// hide reruns
-	await storageSet({ 'hideReruns': hideRerunsCheckbox.checked });
+		// add all "pending" user inputs before gathering keys
+		document.querySelectorAll('button.add').forEach((e) => {
+			// Check if input has value before calling onAddItem
+			const input = e.parentNode.parentNode.querySelector('input');
+			if (input && input.value.trim().length > 0) {
+				onAddItem(e.parentNode.parentNode, false); // Add items without flashing save button
+			}
+		});
 
-	// add all "pending" user inputs
-	document.querySelectorAll('button.add').forEach((e) => {
-		onAddItem(e.parentNode.parentNode, false);
-	});
+		/* BEGIN: update items */
 
-	/* BEGIN: update items */
+			let items = {};
 
-		let items = {};
+			items.categories = gatherKeysMap(categories);
+			items.channels   = gatherKeysMap(channels);
+			items.tags       = gatherKeysMap(tags);
+			items.titles     = gatherKeysArray(titles);
 
-		items.categories = gatherKeysMap(categories);
-		items.channels   = gatherKeysMap(channels);
-		items.tags       = gatherKeysMap(tags);
-		items.titles     = gatherKeysArray(titles);
+			// store via content script to reflect changes immediately
+			let saveOutcome = { success: false, switchedToLocal: false }; // Store result object
+			try {
+				logInfo("Sending blacklist to content script for saving...");
+				// --- AWAIT the response with timeout ---
+				const responsePromise = chrome.runtime.sendMessage({ 'blacklistedItems': items });
+				const timeoutPromise = new Promise((_, reject) =>
+					// Increased timeout to 15 seconds for potentially large local saves
+					setTimeout(() => reject(new Error("Timeout waiting for save confirmation")), 15000)
+				);
 
-		// store via content script to reflect changes immediately
-		try {
-			await chrome.runtime.sendMessage({ 'blacklistedItems': items });
+				// Wait for either the response or the timeout
+				const response = await Promise.race([responsePromise, timeoutPromise]);
+				// --- END AWAIT ---
+
+				logInfo("Response received from content script:", response);
+
+				// --- Check response object ---
+				// Ensure response is an object and has the expected properties
+				if (response && typeof response === 'object' && typeof response.success === 'boolean') {
+					saveOutcome = response; // Store the actual result { success: bool, switchedToLocal: bool }
+					if (saveOutcome.success) {
+						logInfo("Content script confirmed successful save processing.");
+						if (saveOutcome.switchedToLocal) {
+							logInfo("Save successful, but mode was switched to Local Storage.");
+							// Update the UI checkbox to reflect the change
+							useSyncStorageCheckbox.checked = false;
+							alert("Blacklist saved successfully to Local Storage (Cloud Sync was disabled due to size).");
+						} else {
+							logInfo("Blacklist saved successfully using the selected storage mode.");
+							// Optional: Briefly notify user of success without alert spam
+							// console.log("Blacklist saved.");
+						}
+					} else {
+						// The content script explicitly reported failure (e.g., critical error during save)
+						logError("Content script reported save FAILED.");
+						alert("Error: The extension failed to save the blacklist. Please check the console for details.");
+					}
+				} else if (response instanceof Error && response.message.includes("Timeout")) {
+					 logError("Timeout waiting for save confirmation from content script.");
+					 alert("Warning: Did not receive confirmation of blacklist save within 15 seconds. The save might have failed or is taking a long time. Please check the blacklist later.");
+					 saveOutcome.success = false; // Ensure success is false on timeout
+				} else {
+					 // Response was received but wasn't the expected format
+					 logError("Content script did not send expected confirmation object. Response:", response);
+					 alert("Warning: Could not confirm blacklist save status due to unexpected response. Please check the console.");
+					 saveOutcome.success = false; // Treat unexpected response as failure
+				}
+				// --- END Check ---
+
+			}
+			catch (error) {
+				// This catches errors from sendMessage itself or the timeout rejection
+				logError("Error sending blacklist message or receiving response:", error);
+				alert("Error saving blacklist: " + (error.message || error) + "\nPlease check the console.");
+				saveOutcome.success = false; // Mark failure
+			}
+
+		/* END: update items */
+
+		// --- Call onCancel AFTER response, conditionally ---
+		if (saveOutcome.success) {
+			logInfo("Save successful, closing blacklist tab.");
+			isModified = false; // Reset modified flag on success
+			saveButton.classList.remove('flashed');
+			await onCancel(); // Close the tab
+		} else {
+			logError("Save failed or confirmation timed out/invalid. Blacklist tab will NOT be closed automatically.");
+			alert("Save failed or timed out. The blacklist page will remain open. Please check the console for errors and try saving again later.");
+			// Re-enable buttons potentially disabled during save attempt
+			toggleLoadingScreen(false);
+			// Keep modified flag true so save button remains active/flashing
+			// isModified = false; // Don't reset this on failure
+			// saveButton.classList.remove('flashed'); // Keep flashing on failure
 		}
-		catch (error) {
-			console.error(error);
-		}
-
-	/* END: update items */
-
-	await onCancel();
+	} catch (outerError) {
+		// Catch errors from setting storage mode, hideFollowing, hideReruns
+		logError("Error during initial settings save in onSave:", outerError);
+		alert("An error occurred while saving settings. Please check the console.");
+		toggleLoadingScreen(false); // Ensure buttons are re-enabled on error
+		// Keep modified flag potentially true
+	}
 }
 
 async function onCancel() {
@@ -381,7 +537,14 @@ function onExport() {
 
 	let download = document.createElement('a');
 	download.setAttribute('href', 'data:application/json;charset=utf-8,' + encodeURIComponent(serializedBlacklist));
-	download.setAttribute('download', 'UnwantedTwitch_Blacklist.json');
+	
+	// Added date string to export filename (day-month-year format)
+	const currentDate = new Date();
+	const day = currentDate.getDate();
+	const month = currentDate.getMonth() + 1;
+	const year = currentDate.getFullYear();
+	const dateString = `${day}-${month}-${year}`;
+	download.setAttribute('download', `UnwantedTwitch_Blacklist_${dateString}.json`);
 
 	// trigger dialog
 	document.body.appendChild(download);

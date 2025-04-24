@@ -1,3 +1,0 @@
-This is the `twitch.tv_directory_html.txt` file that contains the html for the url `https://www.twitch.tv/directory` In which each of the following are examples of unique `categories` (in plain text format) that exist in `twitch.tv_directory_html.txt`
-
-`Magicraft` `StarCraft II` `Beyond All Reason` `Blue Prince` `Games + Demos` `Retro` `Mechabellum` `Satisfactory` `RimWorld` `Oxygen Not Included` `Factorio` `Schedule  ` `FTL: Faster Than Light` `Sins of a Solar Empire II` `Half Sword` `Wildgate` `Talk Shows & Podcasts` `The Legend of Zelda` `Age of Empires IV` `Warside`

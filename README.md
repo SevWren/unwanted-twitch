@@ -2,14 +2,17 @@
 
 ![UnwantedTwitch](webstore/banner1400x560.png)
 
-## Download
-- [Chrome Web Store](https://chrome.google.com/webstore/detail/unwanted-twitch/egbpddkgpjmliolmpjenjomflclekjld)
-- [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/unwanted-twitch/)
-- [Microsoft Edge-Add-Ons](https://microsoftedge.microsoft.com/addons/detail/unwanted-twitch/jkhpefiopamdlihbichhnhmpfgomefmh)
-- other [Chromium based browsers](https://en.wikipedia.org/wiki/Chromium_(web_browser)#Browsers_based_on_Chromium) (such as [Brave](https://brave.com/), [Opera](https://www.opera.com/) and [Vivaldi](https://vivaldi.com/)) are compatible and allow you to load the extension too
-
 ## Project status
-Please note that **this extension is in maintenance mode**. I will no longer work on new(!) features. However, I will continue to fix issues related to changes on Twitch up to the point where Twitch releases a complete redesign of their website. You can still contribute by [translating the extension in your language](CONTRIBUTING.md).
+- I am attempting to update this forked version of the repo to be compatible with current twitch theme changes.
+- Currently implemented working as intended on individual Game channels i.e.
+    `twitch.tv/directory/category/just-chatting`
+    `twitch.tv/directory/category/dota-2`
+    `twitch.tv/directory/category/grand-theft-auto-v`
+    `twitch.tv/directory/category/league-of-legends`
+
+- Known NOT working on:
+    `twitch.tv/directory/following`
+    `twitch.tv`
 
 ## Features
 - hide unwanted categories/games
@@ -47,11 +50,12 @@ Twitch is infamous for changing their website without further notice, which may 
 - After the first install of the extension, restart your browser. Or at least do a hard refresh (`CTRL+R`) on all twitch.tv tabs.
 - Check if you accidently unchecked the `Show "X" Buttons` option. It can be found in the extension popup menu or as clickable 👁 icon on the management button.
 - Make sure the page is supported, see description. The sidebar generally has no "X" button.
-
+- This is still being addressed in the current forked version of the extension.
 **Channel still show up although I blocked one of the tags?**
 - Twitch limits the number of visible tags in the directory view. If the blocked tag only shows up on the channel page and is not visible in the directory, the extension cannot filter properly.
 - The extension needs to "see" the unwanted content on the page to perform filtering.
-- Some views add tags after the initial load (layout adjustment based on screen size). Monitoring these changes is too costly and thus these tags are neither filtered nor blockable via "X" button.
+    - If the channel has a lot of tags, the extension may not be able to see the tag you previously blocked.
+- Some views add tags after the initial load (layout adjustment based on screen size). Monitoring these changes is too costly (performance wise) and thus these tags are neither filtered nor blockable via "X" button.
 
 **What's the maximum number of items I can block?**
 - When using the **cloud synchronization**, about `1 MB` of data. That roughly translates to **about 30.000 items** due to internal restrictions. If you exceed this quota, the extension will automatically turn off synchronization and switch to the local storage.
@@ -77,6 +81,13 @@ Twitch is infamous for changing their website without further notice, which may 
 ## Updates/Changelog
 
 This forked repository includes performance optimizations to the `directory.js` file, specifically designed to improve the extension's handling of dynamic content loading on pages like `https://www.twitch.tv/directory/category/games-demos`. Below is a detailed changelog of the modifications made, highlighting the differences from the original repository:
+
+**April 24, 2025**
+
+*   **Added date string to export filename in `blacklist.js`**: The export filename now includes the current date in the format `day-month-year`.
+*   **Optimized blacklist import/export in `blacklist.js`**: Improved the import and export functionality for blacklists, including error handling and user feedback.
+*   **Updated storage size limits in `README.md`**: Clarified the storage size limits for cloud synchronization and local storage.
+*   **Improved performance in `directory.js`**: Implemented various performance optimizations, including debounced scroll event handling, batched DOM updates, and optimized selectors.
 
 **April 18, 2025**
 - **Debounced Scroll Event Handling**: Added debouncing to the `onScroll` function to reduce the frequency of filtering operations during rapid scrolling, preventing performance bottlenecks.

@@ -1,49 +1,3 @@
-//Summary of Key Changes Implemented:
-
-//getDirectoryItemNodes: Updated selectors to target the main container divs (div.jCGmCy for streams, div.ScTowerItem-sc-1sjzzes-2 for categories)
-//instead of the inner <a> tags. Placeholders for VOD/Clip selectors added.
-
-//getSidebarItemNodes: Updated to target the main container div.side-nav-card.
-//Added logic to specifically query within the "Recommended Channels" section when mode is 'recommended'.
-
-
-//readItem: Updated to expect the container node and determine item type based on its class or structure, then
-//call the appropriate read... function, passing both container and the primary link node.
-
-//readChannel: Updated to expect container and link nodes. Selectors for channel name and title updated to
-//match the new structure within the container. Logic for finding the tag container updated. Optional chaining (?.) added for robustness.
-
-//readCategory: Updated to expect container and link nodes. Selectors for category name (h3[title]) and tag container updated based on twitch.tv_directory_html.txt.
-
-//readTags: Updated selector to button.tw-tag[data-a-target]. Expects the specific tag container node as input.
-
-//readSidebarItem: Updated to expect the container node. Finds the link node inside.
-//Logic for expanded view extraction confirmed. Added separate helper readCollapsedSidebarItem using existing logic (needs verification with collapsed HTML).
-	
-//removeDirectoryItem / removeSidebarItem: Simplified to hide the containerNode directly and mark the original node (if found) or the container with data-uttv-hidden.
-
-//attachHideButtonToCard: Updated to find the container node, append the button to it, and set position: relative. Added comments about required CSS changes.
-
-//attachHideButtonsToTags: Updated to accept the tag array and container node. Appends the 'X' button directly to each tag button. Added comments about required CSS changes.
-
-//addManagementButton: Updated targetParent logic slightly for robustness.
-
-//onPageChange: Refined the logic to wait for any primary content card indicator (contentCardSelector) before proceeding. Improved logging.
-
-//onHideItem / onHideTag: Updated to receive data from the button's data attributes.
-
-//General Robustness: Added more checks for null/undefined nodes and used optional chaining (?.)
-//more extensively to prevent errors if elements are missing. Improved logging verbosity in key areas.
-
-//Storage Logic: Minor improvements in getBlacklistedItems and putBlacklistedItems for handling potential errors and
-//ensuring data structures are initialized correctly. Ensured cloned data is used for storage operations. Added recovery logic for sync storage failures (switch to local).
-
-//Initialization: Ensured mainNode is found before proceeding in onPageChange. Ensured initBlacklistedItems is called correctly after loading from storage.
-
-//This updated script should be much closer to working with the current Twitch layouts you've provided
-//for stream and category cards, as well as the expanded sidebar. The next step is to test this and provide the remaining HTML snippets (VOD, Clip, Collapsed Sidebar).
-
-
 // jshint esversion: 6
 // jshint -W069
 // jshint -W083
@@ -391,49 +345,28 @@
 	function observeSidebar() {
 		logTrace('invoking observeSidebar()');
 
-		const observerCooldown = 500;
+		const targetSelector = 'div[aria-label="Recommended Channels"]'; // More specific
+		const target = rootNode.querySelector(targetSelector) || rootNode.querySelector('nav#side-nav');
 
-		// Use more specific selector for the sidebar container
-		const targetSelector = 'nav#side-nav'; // Targeting the nav element directly
-		const target         = rootNode.querySelector(targetSelector);
-
-		if (target !== null) {
-			// Disconnect previous observer if any
+		if (target) {
 			if (target.observer) {
 				target.observer.disconnect();
-				logVerbose('Disconnected previous sidebar observer.');
 			}
-
-			const observer = new MutationObserver(function callback_observeSidebar(mutations) {
-				logTrace('callback invoked: observeSidebar()', mutations);
-
-				// Force cooldown to avoid processing multiple mutations at once
-				const timeElapsed = (new Date() - lastSidebarChange);
-				if (timeElapsed < observerCooldown) {
-					logVerbose('Skipping sidebar mutation due to cooldown.');
-					return; // Skip if within cooldown
-				}
-				lastSidebarChange = new Date();
-				logVerbose('Sidebar mutation detected, proceeding with filtering.');
-
-				// Trigger sidebar filter
-				if (hideFollowing === true) {
-					filterSidebar();
-				} else {
-					filterSidebar('recommended');
-				}
+			const observer = new MutationObserver(mutations => {
+				requestAnimationFrame(() => {
+					const now = Date.now();
+					if (now - lastSidebarChange < 500) return;
+					lastSidebarChange = now;
+					filterSidebar(hideFollowing ? 'visible' : 'recommended');
+				});
 			});
-
-			// Observe changes in children and subtree that might add/remove channel items
 			observer.observe(target, { childList: true, subtree: true });
-			target.observer = observer; // Store observer reference
-			logVerbose('Sidebar observer attached.', target);
-
+			target.observer = observer;
+			logVerbose('Sidebar observer attached to:', target);
 		} else {
-			logWarn('Unable to find sidebar. Expected:', targetSelector);
+			logWarn('Sidebar target not found:', targetSelector);
 		}
 	}
-
 
 	/**
 	 * Checks for unprocessed items in the directory of the current page and dispatches a scroll event if necessary.
@@ -507,7 +440,6 @@
 		}
 	}
 
-
 	/**
 	 * Returns if the current document invokes the FFZ extension.
 	 */
@@ -556,7 +488,6 @@
 			}
 		}
 
-
 		return remainingItems;
 	}
 
@@ -566,7 +497,8 @@
 	function filterDirectoryItems(items, remove = true) {
 		logTrace('invoking filterDirectoryItems($, $)', items, remove);
 
-		let remainingItems = [];
+		const toHide = [];
+		const remainingItems = [];
 
 		const itemsLength = items.length;
 		logVerbose('Filtering', itemsLength, 'directory items...');
@@ -583,42 +515,32 @@
 			const nodeToMark = item.containerNode || item.node;
 			nodeToMark.setAttribute('data-uttv-processed', '');
 
-
 			if (remove === false) {
-                remainingItems.push(item); // Keep item if not removing
-                continue;
-            }
+				remainingItems.push(item); // Keep item if not removing
+				continue;
+			}
 
 			if (isBlacklistedItem(item) === true) {
-
-				if (removeDirectoryItem(item) === true) {
-
-					logVerbose('Removed item in directory due to being blacklisted:', item.type, item.name || item.category || item.title);
-					// Do not push to remainingItems
-					continue;
-
-				} else {
-
-					logError('Unable to remove blacklisted item in directory:', item);
-					// If removal failed, still treat it as visible for safety
-					remainingItems.push(item);
-				}
+				toHide.push(item.containerNode);
 			} else {
-				// If not blacklisted, add to remaining items
 				remainingItems.push(item);
 			}
 		}
+
+		if (remove && toHide.length > 0) {
+			toHide.forEach(node => node.classList.add('uttv-hidden-item'));
+			logVerbose('Batched hide of', toHide.length, 'items');
+		}
+
 		logVerbose('Finished filtering items. Kept:', remainingItems.length);
 		return remainingItems;
 	}
-
 
 	/**
 	 * Filters items in the sidebar of the current page. Returns the remaining (not blacklisted) items.
 	 */
 	function filterSidebar(mode = 'visible') {
 		logTrace('invoking filterSidebar($, $)', mode);
-
 
 		// prevent filtering more than once at the same time
 		if (sidebarFilterRunning === true) {
@@ -636,7 +558,6 @@
 		sidebarFilterRunning = false;
 		logVerbose('Finished sidebar filter. Remaining items:', remainingItems.length);
 
-
 		return remainingItems;
 	}
 
@@ -653,17 +574,15 @@
 		for (let i = 0; i < itemsLength; i++) {
 
 			const item = items[i];
-            if (!item || !item.node) {
-                logWarn('Skipping invalid sidebar item:', item);
-                continue;
-            }
-
+			if (!item || !item.node) {
+				logWarn('Skipping invalid sidebar item:', item);
+				continue;
+			}
 
 			// mark item node as being processed
 			// Use the container node if available, otherwise the primary node
-            const nodeToMark = item.containerNode || item.node;
-            nodeToMark.setAttribute('data-uttv-processed', '');
-
+			const nodeToMark = item.containerNode || item.node;
+			nodeToMark.setAttribute('data-uttv-processed', '');
 
 			if (isBlacklistedItem(item) === true) {
 
@@ -677,17 +596,16 @@
 
 					logError('Unable to remove blacklisted item in sidebar:', item);
 					// If removal failed, still treat it as visible for safety
-                    remainingItems.push(item);
+					remainingItems.push(item);
 				}
 			} else {
-                 // If not blacklisted, add to remaining items
-                 remainingItems.push(item);
-            }
+				// If not blacklisted, add to remaining items
+				remainingItems.push(item);
+			}
 		}
 		logVerbose('Finished filtering sidebar items. Kept:', remainingItems.length);
 		return remainingItems;
 	}
-
 
 /* END: filter operations */
 
@@ -703,15 +621,15 @@
 
 		const itemNodes       = getDirectoryItemNodes(mode); // This now returns containers
 		const itemNodesLength = itemNodes.length;
-        logVerbose('Found', itemNodesLength, 'potential item nodes for mode:', mode);
+		logVerbose('Found', itemNodesLength, 'potential item nodes for mode:', mode);
 
 		for (let i = 0; i < itemNodesLength; i++) {
-            // Pass the container node to readItem
+			// Pass the container node to readItem
 			const item = readItem(itemNodes[i]);
 			if (item === null) {
-                logVerbose('Failed to read item from node:', itemNodes[i]);
-                continue;
-            }
+				logVerbose('Failed to read item from node:', itemNodes[i]);
+				continue;
+			}
 			items.push(item);
 		}
 
@@ -723,10 +641,13 @@
 			logWarn('No valid items read from the found nodes.', itemNodes);
 		}
 
-
 		return items;
 	}
 
+	/**
+	 * Returns all item nodes matching the specified mode in the directory of the current page.
+	 * UPDATE: Now selects the main *container* div for each item type.
+	 */
 	/**
 	 * Returns all item nodes matching the specified mode in the directory of the current page.
 	 * UPDATE: Now selects the main *container* div for each item type.
@@ -750,43 +671,58 @@
 		if (!suffix && mode !== 'all') { // 'all' implies no suffix needed
 			throw new Error('Value of argument "mode", which is "' + mode + '", is unknown.');
 		}
-        if (mode === 'all') suffix = ''; // Handle 'all' explicitly
+		if (mode === 'all') suffix = ''; // Handle 'all' explicitly
 
 		let selectors = [];
-        let prefix = (mode === 'recommended') ? '.find-me ' : '';
+		let prefix = (mode === 'recommended') ? '.find-me ' : '';
 
-		// Selector for Stream Cards (Game, Channels, Following, Explore, Frontpage)
+		// --- CORRECT: Selector for Stream Cards (Game, Channels, Following, Explore, Frontpage) ---
 		// Targets the main container div identified in HTML analysis
 		selectors.push(`${prefix}div.Layout-sc-1xcs6mc-0.jCGmCy${suffix}`);
+		// --- END CORRECT ---
 
-		// Selector for Category Cards (Categories page)
-		// Targets the main container div identified in HTML analysis
-		selectors.push(`${prefix}div.Layout-sc-1xcs6mc-0.ScTowerItem-sc-1sjzzes-2${suffix}`);
+		// --- CORRECT: Selector for Category Cards (Main /directory page) ---
+		// Use the container div identified in the new HTML analysis
+		selectors.push(`${prefix}div.game-card${suffix}`);
+		// --- END CORRECT ---
 
-        // --- TODO: Add selectors for VOD and Clip cards here when their structure is known ---
+		// --- REMOVED: Obsolete category card selector based on older HTML ---
+		// selectors.push(`${prefix}div[data-target="directory-page__card-container"]${suffix}`);
+		// --- END REMOVED ---
+
+		// --- TODO: Add selectors for VOD and Clip cards here when their structure is known ---
 		// Example: selectors.push(`${prefix}div.vod-card-container-selector${suffix}`);
 		// Example: selectors.push(`${prefix}div.clip-card-container-selector${suffix}`);
 
-
 		const combinedSelector = selectors.join(', ');
 
-        if (!mainNode) {
-            logError('mainNode is null, cannot query for directory items.');
-            return [];
-        }
+		if (!mainNode) {
+			logError('mainNode is null, cannot query for directory items.');
+			return [];
+		}
 
-		const nodes       = mainNode.querySelectorAll(combinedSelector);
+		// Use try-catch for querySelectorAll as invalid selectors can throw errors
+		let nodes = [];
+		try {
+			nodes = mainNode.querySelectorAll(combinedSelector);
+		} catch (error) {
+			logError('Error executing querySelectorAll with selector:', combinedSelector, error);
+			return []; // Return empty array on error
+		}
+
 		const nodesLength = nodes.length;
 
 		if (nodesLength > 0) {
 			logTrace('Found ' + nodesLength + ' container nodes in directory using selector:', combinedSelector, nodes);
 		} else {
-			logTrace('Unable to find container nodes in directory. Expected selector:', combinedSelector);
+			// Only log trace if we expected results (e.g., not on an empty page)
+			if (mainNode.querySelector('main > div > div:not(:empty)')) { // Basic check if main area has *some* content
+				logTrace('Unable to find container nodes in directory. Expected selector:', combinedSelector);
+			}
 		}
 
 		return nodes;
 	}
-
 
 	/**
 	 * Returns all items matching the specified mode in the sidebar of the current page.
@@ -798,16 +734,16 @@
 
 		const itemNodes       = getSidebarItemNodes(mode); // This now returns containers
 		const itemNodesLength = itemNodes.length;
-        logVerbose('Found', itemNodesLength, 'potential sidebar nodes for mode:', mode);
+		logVerbose('Found', itemNodesLength, 'potential sidebar nodes for mode:', mode);
 
 		for (let i = 0; i < itemNodesLength; i++) {
 			const item = readSidebarItem(
 				itemNodes[i] // Pass the container node
 			);
 			if (item === null) {
-                logVerbose('Failed to read sidebar item from node:', itemNodes[i]);
-                continue;
-            }
+				logVerbose('Failed to read sidebar item from node:', itemNodes[i]);
+				continue;
+			}
 			items.push(item);
 		}
 
@@ -818,7 +754,6 @@
 		} else {
 			logWarn('No valid sidebar items read from the found nodes.', itemNodes);
 		}
-
 
 		return items;
 	}
@@ -846,7 +781,7 @@
 		if (!suffix && mode !== 'all') {
 			throw new Error('Value of argument "mode", which is "' + mode + '", is unknown.');
 		}
-        if (mode === 'all') suffix = '';
+		if (mode === 'all') suffix = '';
 
 		// Base selector for the container of each sidebar item (works for expanded and likely collapsed)
 		const baseItemSelector = `div.Layout-sc-1xcs6mc-0.cwtKyw.side-nav-card${suffix}`;
@@ -894,11 +829,13 @@
 
 		if (!containerNode) { return null; }
 
-		// Check if it's a category card container
-		if (containerNode.matches('div.Layout-sc-1xcs6mc-0.ScTowerItem-sc-1sjzzes-2')) {
+		// Check if it's a category card container - Updated selector
+		if (containerNode.matches('div[data-target="directory-page__card-container"]')) {
+			// Find the link node *within* the container
 			const linkNode = containerNode.querySelector('a[data-a-target="tw-box-art-card-link"]');
 			if (linkNode) {
-				return readCategory(containerNode, linkNode); // Pass both container and link
+				// Pass the container node, as category details are siblings/children of the link's parent within the container
+				return readCategory(containerNode, linkNode);
 			} else {
 				logWarn('Could not find link node within category container:', containerNode);
 				return null;
@@ -908,12 +845,12 @@
 		// Check if it's a stream card container
 		if (containerNode.matches('div.Layout-sc-1xcs6mc-0.jCGmCy')) {
 			const linkNode = containerNode.querySelector('a.ScCoreLink-sc-16kq0mq-0.hcWFnG');
-            if (linkNode) {
-                 return readChannel(containerNode, linkNode); // Pass both container and link
-            } else {
-                 logWarn('Could not find link node within stream container:', containerNode);
-                 return null;
-            }
+			if (linkNode) {
+				return readChannel(containerNode, linkNode); // Pass both container and link
+			} else {
+				logWarn('Could not find link node within stream container:', containerNode);
+				return null;
+			}
 		}
 
 		// --- TODO: Add checks for VOD/Clip card container selectors here ---
@@ -921,7 +858,7 @@
 		// Fallback/Error
 		logError('Unable to identify item type from container node:', containerNode);
 		// Mark as processed to avoid re-checking unknown items repeatedly
-        containerNode.setAttribute('data-uttv-processed', '');
+		containerNode.setAttribute('data-uttv-processed', '');
 		return null;
 	}
 
@@ -942,7 +879,7 @@
 			title:    '',
 			rerun:    false,
 			node:     linkNode, // Keep link node as primary reference for hiding attribute? Or container? Let's use container.
-            containerNode: containerNode // Store container node reference explicitly
+			containerNode: containerNode // Store container node reference explicitly
 		};
 
 		/* BEGIN: title */
@@ -980,20 +917,21 @@
 		/* BEGIN: tags */
 			if (findTags) {
 				const tagContainer = containerNode.querySelector('.Layout-sc-1xcs6mc-0.fAVISI .InjectLayout-sc-1i43xsx-0'); // Target the container div for tags
-                if (tagContainer) {
-                     result.tags = readTags(tagContainer);
-                } else {
-                     logVerbose('Unable to determine tag container for channel.', containerNode);
-                }
+				if (tagContainer) {
+					result.tags = readTags(tagContainer);
+				} else {
+					logVerbose('Unable to determine tag container for channel.', containerNode);
+				}
 			}
 		/* END: tags */
 
 		// rerun - Selector needs verification from Rerun Card HTML
 		result.rerun = (containerNode.querySelector('.stream-type-indicator--rerun') !== null); // Keep existing check for now
 
+		// Add near the end of readChannel, before the return statement
+		logVerbose(`[readChannel] Extracted Data: Name='${result.name}', Title='${result.title}', Category='${result.category}', Tags='${result.tags?.map(t=>t.name).join(',')}', Rerun='${result.rerun}'`);
 		return result;
 	}
-
 
 	/**
 	 * Returns information for a category item based on the provided container node and link node.
@@ -1002,7 +940,7 @@
 	function readCategory(containerNode, linkNode, findTags = true) {
 		logTrace('invoking readCategory($, $, $)', containerNode, linkNode, findTags);
 
-        if (!containerNode || !linkNode) return null;
+		if (!containerNode || !linkNode) return null;
 
 		let result = {
 			type:     'categories',
@@ -1012,26 +950,35 @@
 			title:    '', // Categories don't have stream titles
 			rerun:    false, // Categories aren't reruns
 			node:     linkNode, // Use link node as primary reference
-            containerNode: containerNode // Store container node reference
+			containerNode: containerNode // Store container node reference
 		};
 
 		/* BEGIN: name */
-			const nameNode = containerNode.querySelector('article h3[title]'); // Target h3 inside article
+			// Updated selector: Find the h2 title within the specific link structure
+			const nameNode = containerNode.querySelector('a.ScCoreLink-sc-16kq0mq-0.jRnnHH h2[title]');
 			result.name = nameNode?.textContent?.trim() ?? '';
 			result.category = result.name; // For categories, name and category are the same
 			if (!result.name) {
-				return logError('Unable to determine name of category.', containerNode);
+				// Try fallback selector if the first one fails (e.g., structure variation)
+				const fallbackNameNode = containerNode.querySelector('.tw-card-body h2[title]');
+				result.name = fallbackNameNode?.textContent?.trim() ?? '';
+				result.category = result.name;
+				if (!result.name) {
+					return logError('Unable to determine name of category using primary or fallback selector.', containerNode);
+				}
+				logVerbose('Used fallback selector for category name.');
 			}
 		/* END: name */
 
 		/* BEGIN: tags */
 			if (findTags) {
-				const tagContainer = containerNode.querySelector('article .Layout-sc-1xcs6mc-0.fLNVxt'); // Target specific tag container div
+				// Updated selector for the tag container div
+				const tagContainer = containerNode.querySelector('div.InjectLayout-sc-1i43xsx-0.gNgtQs');
 				if (tagContainer) {
-                    result.tags = readTags(tagContainer);
-                } else {
-                    logVerbose('Unable to determine tag container for category.', containerNode);
-                }
+					result.tags = readTags(tagContainer);
+				} else {
+					logVerbose('Unable to determine tag container for category.', containerNode);
+				}
 			}
 		/* END: tags */
 
@@ -1047,24 +994,24 @@
 
 		let tags = [];
 		if (!tagContainerNode) {
-            logVerbose('No tag container node provided to readTags.');
-            return tags;
-        }
+			logVerbose('No tag container node provided to readTags.');
+			return tags;
+		}
 
 		const tagsSelector = 'button.tw-tag[data-a-target]'; // Select the button tags
 		const tagNodes     = tagContainerNode.querySelectorAll(tagsSelector);
 		const nodesLength  = tagNodes.length;
 
 		if (nodesLength > 0) {
-            logTrace('Found', nodesLength, 'tag nodes in container:', tagContainerNode);
+			logTrace('Found', nodesLength, 'tag nodes in container:', tagContainerNode);
 			for (let i = 0; i < nodesLength; i++) {
 				const tagNode = tagNodes[i];
 				const tagName = tagNode.getAttribute('data-a-target');
 
 				if (!tagName) {
-                    logWarn('Tag node missing data-a-target:', tagNode);
-                    continue;
-                }
+					logWarn('Tag node missing data-a-target:', tagNode);
+					continue;
+				}
 
 				// Optional: Ignore meta targets if necessary (though unlikely within this container)
 				// if (tagName.indexOf('preview-card') >= 0) { continue; }
@@ -1077,171 +1024,228 @@
 		} else {
 			logTrace('Unable to find any tags in container. Expected selector:', tagsSelector, 'within:', tagContainerNode);
 		}
-		logVerbose('Extracted tags:', tags.map(t => t.name));
+		//logVerbose('Extracted tags:', tags.map(t => t.name));
+		logVerbose('Extracted tags from container:', tags.map(t => t.name), tagContainerNode);
 		return tags;
 	}
 
-
 	/**
 	 * Returns sidebar item information based on the provided container node.
-	 * UPDATE: Expects container node, uses existing logic for data extraction within it. Needs collapsed view verification.
+	 * UPDATE: Checks sidebar state first, then applies appropriate logic.
 	 */
-	function readSidebarItem(containerNode, findCategory = false) { // Default findCategory to false for sidebar
+	function readSidebarItem(containerNode, findCategory = false) {
 		logTrace('invoking readSidebarItem($, $)', containerNode, findCategory);
 
-        if (!containerNode) return null;
+		if (!containerNode) return null;
 
-        const linkNode = containerNode.querySelector('a.side-nav-card__link'); // Find the main link inside the container
+		// Find the main sidebar nav element to check its state
+		const sidebarNav = document.querySelector('nav#side-nav'); // Assuming side-nav ID is reliable
+		const isCollapsed = sidebarNav ? sidebarNav.closest('.side-nav--collapsed') !== null : false; // Check if the parent div has the collapsed class
 
-        if (!linkNode) {
-            // Special case for collapsed sidebar where the container itself might be the link/have the aria-label
-            if (containerNode.matches('a.side-nav-card')) {
-                 // Handle collapsed logic here if different, currently based on existing logic
-                return readCollapsedSidebarItem(containerNode);
-            }
-            logError('Could not find primary link node within sidebar container:', containerNode);
-            return null;
-        }
+		logVerbose(`Reading sidebar item. Collapsed state: ${isCollapsed}`);
 
-		let result = {
-			type:     'channels',
-			name:     '',
-			category: '',
-			tags:     [], // Tags usually not shown in sidebar
-			title:    '', // Titles not shown in sidebar
-			rerun:    false,
-			node:     linkNode, // Reference the link node
-            containerNode: containerNode // Reference the container
-		};
+		if (isCollapsed) {
+			// --- Handle Collapsed Sidebar ---
+			// Directly call or implement collapsed logic. Assumes containerNode is the 'a' or contains necessary info.
+			return readCollapsedSidebarItem(containerNode); // Pass the container
 
-		/* BEGIN: name - Expanded View */
+		} else {
+			// --- Handle Expanded Sidebar ---
+			const linkNode = containerNode.querySelector('a.side-nav-card__link'); // Find the main link inside the container
+
+			if (!linkNode) {
+				// If link is not found even in expanded view, log error and exit.
+				logError('Could not find primary link node within expanded sidebar container:', containerNode);
+				return null;
+			}
+
+			let result = {
+				type: 'channels',
+				name: '',
+				category: '',
+				tags: [], // Tags usually not shown in sidebar
+				title: '', // Titles not shown in sidebar
+				rerun: false,
+				node: linkNode, // Reference the link node
+				containerNode: containerNode // Reference the container
+			};
+
+			/* BEGIN: name - Expanded View */
+			// Combined selector for robustness, prioritizing p[title] inside data-a-target first
 			const nameNode = linkNode.querySelector('[data-a-target="side-nav-title"] p[title], [data-a-target="side-nav-card-metadata"] p[title]');
 			result.name = nameNode?.textContent?.trim() ?? '';
 			if (!result.name) {
-				// If name not found in expanded structure, maybe it's collapsed? Try that logic.
-				return readCollapsedSidebarItem(containerNode); // Pass the container
+				// It's unusual for name to be missing in expanded view, log as warning.
+				logWarn('Could not determine name for expanded sidebar item:', containerNode);
+				// We might still be able to get category, so don't return null immediately.
 			}
-		/* END: name - Expanded View */
+			/* END: name - Expanded View */
 
-		/* BEGIN: category - Expanded View */
+			/* BEGIN: category - Expanded View */
 			const categoryNode = linkNode.querySelector('[data-a-target="side-nav-game-title"] p'); // Target the paragraph inside
 			result.category = categoryNode?.textContent?.trim() ?? '';
 			// No warning if category is empty, it's expected for offline channels etc.
-		/* END: category - Expanded View */
+			/* END: category - Expanded View */
 
-		// Rerun check - Needs verification if applicable to sidebar
-		result.rerun = (linkNode.querySelector('.tw-svg__asset--videorerun') !== null);
+			// Rerun check - Needs verification if applicable to sidebar
+			result.rerun = (linkNode.querySelector('.tw-svg__asset--videorerun') !== null); // Keep existing check
 
-		return result;
+			// Return null only if the essential name is missing
+			if (!result.name) {
+				logError('Expanded sidebar item missing critical name information.', containerNode);
+				return null;
+			}
+
+			return result;
+		}
 	}
 
-    /** Helper for collapsed sidebar logic - Needs HTML verification */
-    function readCollapsedSidebarItem(node) {
-        logTrace('invoking readCollapsedSidebarItem($)', node);
-        // Assumes 'node' is the 'a.side-nav-card' element or the container div
-        let name = '';
-        const avatarNode = node.querySelector('.tw-avatar[aria-label]'); // Check for aria-label first
-        if (avatarNode) {
-            name = avatarNode.getAttribute('aria-label');
-        } else {
-            const imageNode = node.querySelector('.tw-image-avatar[alt]'); // Fallback to image alt
-            if (imageNode) {
-                name = imageNode.getAttribute('alt');
-            }
-        }
+	// --- Keep the existing readCollapsedSidebarItem helper ---
+	/** Helper for collapsed sidebar logic - Needs HTML verification */
+	function readCollapsedSidebarItem(node) {
+		logTrace('invoking readCollapsedSidebarItem($)', node);
+		// Assumes 'node' is the 'div.side-nav-card' container for the collapsed item
+		let name = '';
+		let linkHref = '#'; // Default href
 
-        if (!name) {
-             return logError('Unable to determine name of collapsed sidebar channel.', node);
-        }
+		// In collapsed view, the main link might be the container itself or an inner 'a' without the specific class
+		const collapsedLink = node.matches('a') ? node : node.querySelector('a'); // Check if container is link, else find first link within
 
-        return {
-			type:     'channels',
-			name:     name,
+		if (collapsedLink) {
+			linkHref = collapsedLink.getAttribute('href') || '#';
+			// Try getting name from aria-label on the link first
+			name = collapsedLink.getAttribute('aria-label');
+			if (!name) {
+				// Fallback: Look for aria-label on avatar *inside* the link
+				const avatarNode = collapsedLink.querySelector('.tw-avatar[aria-label]');
+				if (avatarNode) {
+					name = avatarNode.getAttribute('aria-label');
+				} else {
+					// Fallback: Look for alt text on image *inside* the link
+					const imageNode = collapsedLink.querySelector('.tw-image-avatar[alt]');
+					if (imageNode) {
+						name = imageNode.getAttribute('alt');
+					}
+				}
+			}
+			// Further fallback if aria-label/alt fails: extract from href? Less reliable.
+			if (!name && linkHref !== '#') {
+				name = linkHref.substring(1); // Get text after "/" as a last resort
+				logVerbose('Collapsed sidebar item name extracted from href:', name);
+			}
+
+		} else {
+			logWarn('Could not find link element within collapsed sidebar container:', node);
+			// Attempt extraction directly from container's children if no link found
+			const avatarNode = node.querySelector('.tw-avatar[aria-label]');
+			if (avatarNode) {
+				name = avatarNode.getAttribute('aria-label');
+			} else {
+				const imageNode = node.querySelector('.tw-image-avatar[alt]');
+				if (imageNode) {
+					name = imageNode.getAttribute('alt');
+				}
+			}
+		}
+
+		if (!name) {
+			return logError('Unable to determine name of collapsed sidebar channel.', node);
+		}
+
+		// Clean up potential extra text like "Use the Right Arrow Key..." if present in aria-label
+		name = name.replace(/Use the Right Arrow Key to show more information for /i, '').replace(/\./, '').trim();
+
+		return {
+			type: 'channels',
+			name: name,
 			category: '', // No category in collapsed view
-			tags:     [],
-			title:    '',
-			rerun:    false,
-			node:     node, // Reference the node itself (likely the <a> or container)
-            containerNode: node
+			tags: [],
+			title: '',
+			rerun: false,
+			node: collapsedLink || node, // Reference the link if found, else the container
+			containerNode: node
 		};
-    }
+	}
 
 	/**
 	 * Returns if the specified item is blacklisted.
 	 */
 	function isBlacklistedItem(item) {
-		logTrace('invoking isBlacklistedItem($)', item);
+		//logTrace('invoking isBlacklistedItem($)', item); // Keep trace optional
 
-        if (!item || typeof item !== 'object') {
-            logError('Invalid item passed to isBlacklistedItem:', item);
-            return false;
-        }
+		if (!item || typeof item !== 'object') {
+			logError('[isBlacklistedItem] Invalid item passed:', item);
+			return false;
+		}
+
+		const itemIdentifier = item.name || item.category || item.title || 'Unknown Item';
+		logVerbose(`[isBlacklistedItem] Checking: Type='${item.type}', Name='${item.name}', Category='${item.category}', Title='${item.title}', Rerun='${item.rerun}', Tags='${item.tags?.map(t=>t.name).join(',')}'`);
 
 		// blacklisted for being a rerun
 		if (hideReruns && (item.rerun === true)) {
-            logTrace('Item blacklisted: Rerun');
-            return true;
-        }
+			logInfo(`[isBlacklistedItem] Blacklisted: Rerun - ${itemIdentifier}`);
+			return true;
+		}
 
-        // Check item type exists in blacklist cache
-		if (storedBlacklistedItems[item.type] === undefined && item.type !== 'categories') { // Allow category check even if type isn't 'categories'
-            //logTrace('Item type not in blacklist:', item.type);
-             // Check category only if item isn't already a category type
-            if (item.type !== 'categories' && item.category && matchTerms(item.category, 'categories')) {
-                logTrace('Item blacklisted by Category:', item.category);
-                return true;
-            }
-            // Check tags
-            if (item.tags && item.tags.length > 0) {
-                for (const tag of item.tags) {
-                    if (matchTerms(tag.name, 'tags')) {
-                        logTrace('Item blacklisted by Tag:', tag.name);
-                        return true;
-                    }
-                }
-            }
-             // Check title
-            if (item.title && matchTerms(item.title, 'titles')) {
-                logTrace('Item blacklisted by Title:', item.title);
-                return true;
-            }
-            return false; // No relevant blacklist entries found for this item type
-        }
+		// Check item type exists in blacklist cache
+		if (storedBlacklistedItems[item.type] === undefined && item.type !== 'categories') { // Allow category check even if item type isn't 'categories'
+			logTrace('[isBlacklistedItem] Type', item.type, 'not directly in blacklist. Checking Category/Tags/Title...');
+			// Check category only if item isn't already a category type
+			if (item.type !== 'categories' && item.category && matchTerms(item.category, 'categories')) {
+				logInfo(`[isBlacklistedItem] Blacklisted: Category Match on '${item.category}' for item ${itemIdentifier}`);
+				return true;
+			}
+			// Check tags
+			if (item.tags && item.tags.length > 0) {
+				for (const tag of item.tags) {
+					if (matchTerms(tag.name, 'tags')) {
+						logInfo(`[isBlacklistedItem] Blacklisted: Tag Match on '${tag.name}' for item ${itemIdentifier}`);
+						return true;
+					}
+				}
+			}
+			// Check title
+			if (item.title && matchTerms(item.title, 'titles')) {
+				logInfo(`[isBlacklistedItem] Blacklisted: Title Match on '${item.title}' for item ${itemIdentifier}`);
+				return true;
+			}
+			logVerbose('[isBlacklistedItem] Not blacklisted (Type not relevant or no Category/Tag/Title match).');
+			return false; // No relevant blacklist entries found for this item type
+		}
 
 		// Blacklisted by Name (Channel Name or Category Name)
-        // Use item.name for channels, item.category for categories (they are the same value)
-        const nameToCheck = item.type === 'categories' ? item.category : item.name;
+		// Use item.name for channels, item.category for categories (they are the same value)
+		const nameToCheck = item.type === 'categories' ? item.category : item.name;
 		if (nameToCheck && matchTerms(nameToCheck, item.type)) {
-			logTrace('Item blacklisted by Name/Category Name:', nameToCheck, '(Type:', item.type, ')');
+			logInfo(`[isBlacklistedItem] Blacklisted: Name Match on '${nameToCheck}' (Type: ${item.type})`);
 			return true;
 		}
 
 		// Blacklisted by Category (specifically for Channel items)
 		if (item.type === 'channels' && item.category && matchTerms(item.category, 'categories')) {
-			logTrace('Channel item blacklisted by Category:', item.category);
+			logInfo(`[isBlacklistedItem] Blacklisted: Category Match on '${item.category}' for channel ${item.name}`);
 			return true;
 		}
 
 		// Blacklisted by Tag
 		if (item.tags && item.tags.length > 0) {
-            for (const tag of item.tags) {
-                if (matchTerms(tag.name, 'tags')) {
-                    logTrace('Item blacklisted by Tag:', tag.name);
-                    return true;
-                }
-            }
-        }
+			for (const tag of item.tags) {
+				if (matchTerms(tag.name, 'tags')) {
+					logInfo(`[isBlacklistedItem] Blacklisted: Tag Match on '${tag.name}' for item ${itemIdentifier}`);
+					return true;
+				}
+			}
+		}
 
 		// Blacklisted by Title
 		if (item.title && matchTerms(item.title, 'titles')) {
-			logTrace('Item blacklisted by Title:', item.title);
+			logInfo(`[isBlacklistedItem] Blacklisted: Title Match on '${item.title}' for item ${itemIdentifier}`);
 			return true;
 		}
 
-        //logTrace('Item not blacklisted:', item.name || item.category || item.title);
+		logVerbose(`[isBlacklistedItem] Not blacklisted: ${itemIdentifier}`);
 		return false;
 	}
-
 
 	/**
 	 * Returns if the specified term matches against the provided blacklist.
@@ -1249,9 +1253,8 @@
 	function matchTerms(term, type) {
 		// Added early exit for invalid type
 		if (!term || typeof term !== 'string' || term.length === 0 || !storedBlacklistedItems[type]) {
-             return false;
-        }
-
+			return false;
+		}
 
 		const termL = normalizeCase(term);
 
@@ -1261,14 +1264,13 @@
 			return true;
 		}
 
-
 		// Check for exact match cache
 		if (cacheExactTerms[type]) {
 			for (const exactTerm of cacheExactTerms[type]) {
 				if (term === exactTerm) {
-                    //logVerbose('Exact match found:', term, 'vs', exactTerm);
-                    return true;
-                }
+					//logVerbose('Exact match found:', term, 'vs', exactTerm);
+					return true;
+				}
 			}
 		}
 
@@ -1276,9 +1278,9 @@
 		if (cacheLooseTerms[type]) {
 			for (const looseTerm of cacheLooseTerms[type]) {
 				if (termL.includes(looseTerm)) { // Use includes for substring check
-                    //logVerbose('Loose match found:', termL, 'contains', looseTerm);
-                    return true;
-                }
+					//logVerbose('Loose match found:', termL, 'contains', looseTerm);
+					return true;
+				}
 			}
 		}
 
@@ -1286,9 +1288,9 @@
 		if (cacheRegExpTerms[type]) {
 			for (const regexp of cacheRegExpTerms[type]) {
 				if (regexp.test(term)) {
-                     //logVerbose('RegExp match found:', term, 'matches', regexp);
-                    return true;
-                }
+					//logVerbose('RegExp match found:', term, 'matches', regexp);
+					return true;
+				}
 			}
 		}
 
@@ -1297,36 +1299,51 @@
 
 	/**
 	 * Removes the provided item node. Returns if the node could be removed.
-	 * UPDATE: Targets the container node directly.
+	 * UPDATE: Uses classList.add instead of inline style.
 	 */
 	function removeDirectoryItem(item) {
-		logTrace('invoking removeDirectoryItem($)', item);
+		//logTrace('invoking removeDirectoryItem($)', item); // Optional trace
 
 		const container = item.containerNode; // Use the container node identified earlier
+		const itemIdentifier = item.name || item.category || item.title || 'Unknown Item';
 
 		if (!container) {
-			logError('Cannot remove directory item, containerNode is missing:', item);
+			logError('[removeDirectoryItem] Cannot remove directory item, containerNode is missing:', item);
 			return false;
 		}
+		logInfo(`[removeDirectoryItem] Attempting to hide container for: ${itemIdentifier}`, container);
+		// *** DEBUG: Log classes before adding ***
+		logVerbose('[removeDirectoryItem] Container classes BEFORE add:', container.className);
 
 		try {
 			// Mark the original node (link/article) as hidden for potential re-checks
-			if (item.node) {
-				item.node.setAttribute('data-uttv-hidden', '');
-			} else {
-                 container.setAttribute('data-uttv-hidden', ''); // Mark container if primary node missing
-            }
+			// Use optional chaining for safety
+			item.node?.setAttribute('data-uttv-hidden', '');
+			container.setAttribute('data-uttv-hidden', ''); // Ensure container is also marked
 
-			// Hide the main container
-			container.style.display = 'none !important;';
-			logVerbose('Successfully hid directory item container:', container);
-			return true;
+			// Hide the main container by adding the CSS class
+			logVerbose('[removeDirectoryItem] Adding .uttv-hidden-item class to container.');
+			container.classList.add('uttv-hidden-item');
+			// *** DEBUG: Log classes AFTER adding ***
+			logVerbose('[removeDirectoryItem] Container classes AFTER add:', container.className);
+
+			// *** DEBUG: Verify hiding after applying class ***
+			const computedStyle = window.getComputedStyle(container).display;
+			if (computedStyle === 'none') {
+				logInfo(`[removeDirectoryItem] Hide successful for: ${itemIdentifier} (via class)`);
+			} else {
+				logError(`[removeDirectoryItem] Hide FAILED for: ${itemIdentifier} (Computed style: ${computedStyle} despite adding class)`);
+				// Log parent display style too, maybe it's affecting children?
+				if (container.parentNode) {
+					logVerbose(`[removeDirectoryItem] Parent computed display: ${window.getComputedStyle(container.parentNode).display}`);
+				}
+			}
+			return true; // Return true even if computedStyle check fails, as the class was added.
 		} catch (error) {
-			logError('Error removing directory item container:', error, item);
+			logError(`[removeDirectoryItem] Error hiding container for: ${itemIdentifier}`, error, item);
 			return false;
 		}
 	}
-
 
 	/**
 	 * Removes the provided sidebar item node. Returns if the node could be removed.
@@ -1335,31 +1352,30 @@
 	function removeSidebarItem(item) {
 		logTrace('invoking removeSidebarItem($)', item);
 
-        const container = item.containerNode; // Use the container node identified earlier
+		const container = item.containerNode; // Use the container node identified earlier
 
 		if (!container) {
 			logError('Cannot remove sidebar item, containerNode is missing:', item);
 			return false;
 		}
 
-        try {
-             // Mark the original node (link/article) as hidden for potential re-checks
-            if (item.node) {
-                item.node.setAttribute('data-uttv-hidden', '');
-            } else {
-                 container.setAttribute('data-uttv-hidden', ''); // Mark container if primary node missing
-            }
+		try {
+			// Mark the original node (link/article) as hidden for potential re-checks
+			if (item.node) {
+				item.node.setAttribute('data-uttv-hidden', '');
+			} else {
+				container.setAttribute('data-uttv-hidden', ''); // Mark container if primary node missing
+			}
 
-            // Hide the main container card div
-            container.style.display = 'none !important;';
-            logVerbose('Successfully hid sidebar item container:', container);
-            return true;
-        } catch (error) {
-            logError('Error removing sidebar item container:', error, item);
+			// Hide the main container card div
+			container.style.display = 'none !important;';
+			logVerbose('Successfully hid sidebar item container:', container);
+			return true;
+		} catch (error) {
+			logError('Error removing sidebar item container:', error, item);
 			return false;
-        }
+		}
 	}
-
 
 /* END: item operations */
 
@@ -1376,40 +1392,40 @@
 		for (let i = 0; i < itemsLength; i++) {
 
 			const item = items[i];
-            if (!item || !item.containerNode) {
-                logWarn('Skipping button attachment for invalid item:', item);
-                continue;
-            };
+			if (!item || !item.containerNode) {
+				logWarn('Skipping button attachment for invalid item:', item);
+				continue;
+			};
 
-            // Attach to Card Container
+			// Attach to Card Container
 			attachHideButtonToCard(item);
 
-            // Attach to Tags within the container
-            // Find the correct tag container based on item type
-            let tagContainerNode = null;
-            if (item.type === 'channels') {
-                tagContainerNode = item.containerNode.querySelector('.Layout-sc-1xcs6mc-0.fAVISI .InjectLayout-sc-1i43xsx-0');
-            } else if (item.type === 'categories') {
-                tagContainerNode = item.containerNode.querySelector('article .Layout-sc-1xcs6mc-0.fLNVxt');
-            }
-            // --- TODO: Add logic for VOD/Clip tag containers ---
+			// Attach to Tags within the container
+			// Find the correct tag container based on item type
+			let tagContainerNode = null;
+			if (item.type === 'channels') {
+				tagContainerNode = item.containerNode.querySelector('.Layout-sc-1xcs6mc-0.fAVISI .InjectLayout-sc-1i43xsx-0');
+			} else if (item.type === 'categories') {
+				tagContainerNode = item.containerNode.querySelector('article .Layout-sc-1xcs6mc-0.fLNVxt');
+			}
+			// --- TODO: Add logic for VOD/Clip tag containers ---
 
 			if (tagContainerNode && item.tags && item.tags.length > 0) {
-                attachHideButtonsToTags(item.tags, tagContainerNode); // Pass tags array and container
-            }
+				attachHideButtonsToTags(item.tags, tagContainerNode); // Pass tags array and container
+			}
 		}
 	}
 
 	/**
 	 * Attaches a hide button to the provided card container node.
-	 * UPDATE: Appends to the container node. Requires CSS update.
+	 * UPDATE: Appends to the container node. Listener now handles immediate hide + verbose logging.
 	 */
 	function attachHideButtonToCard(item) {
-		logTrace('invoking attachHideButtonToCard($)', item);
+		//logTrace('invoking attachHideButtonToCard($)', item); // Keep trace for less noise if needed
 
 		const containerNode = item.containerNode;
 		if (!containerNode) {
-			logError('Cannot attach card button, containerNode missing:', item);
+			logError('[attachHideButtonToCard] Cannot attach card button, containerNode missing for item:', item);
 			return;
 		}
 
@@ -1417,75 +1433,146 @@
 
 		// Prevent attaching the button more than once
 		if (containerNode.getAttribute(attachedKey) !== null) {
-			//logVerbose('Hide button already attached to card container.', containerNode);
+			//logVerbose('[attachHideButtonToCard] Hide button already attached to card container.', containerNode);
 			return;
 		}
 
-		// Mark item as being processed
+		// Mark item as being processed for button attachment
 		containerNode.setAttribute(attachedKey, '');
+		logVerbose('[attachHideButtonToCard] Attaching button to container:', containerNode, 'for item:', item.name || item.category);
 
 		/* BEGIN: build hide button */
 			let hideItem = document.createElement('div');
 			let label = '';
+			let itemIdentifier = item.name || item.category || item.title || 'Unknown Item'; // Use best available identifier
 
 			switch (item.type) {
 				case 'categories':
 					hideItem.className   = 'uttv-hide-item uttv-category';
 					label = chrome.i18n.getMessage('label_HideCategory');
+					itemIdentifier = item.category; // Prefer category name for categories
 				break;
 				case 'channels':
 					hideItem.className   = 'uttv-hide-item uttv-channel';
-                    label = chrome.i18n.getMessage('label_HideChannel');
-					// FFZ offset logic might still be relevant visually, keep for now
+					label = chrome.i18n.getMessage('label_HideChannel');
+					itemIdentifier = item.name; // Prefer channel name for channels
 					if ( usingFFZ() && item.node?.getAttribute('href') && /^\/[^\/]+\/?$/.test(item.node.getAttribute('href')) ) {
 						hideItem.className += ' uttv-ffz';
 					}
 				break;
-                // --- TODO: Add cases for VOD/Clip types ---
+				// --- TODO: Add cases for VOD/Clip types ---
 				default:
-					logError('Unable to create hide button for card, unknown item type:', item.type);
-                    return; // Don't attach button for unknown types
+					logError('[attachHideButtonToCard] Unable to create hide button for card, unknown item type:', item.type);
+					return; // Don't attach button for unknown types
 			}
 
 			hideItem.textContent = 'X';
-			hideItem.title       = label + ' (' + (item.name || item.category) + ')'; // Add name for clarity
+			hideItem.title       = label + ' (' + itemIdentifier + ')';
 
 			if (renderButtons === false) {
 				hideItem.classList.add('uttv-hidden');
 			}
 		/* END: build hide button */
 
-		// Attach action listener with backreference to item
 		// Store necessary info directly on the button
-		hideItem.setAttribute('data-uttv-type', item.type);
-		hideItem.setAttribute('data-uttv-name', item.name || item.category); // Use name or category
-		hideItem.addEventListener('click', async(event) => {
+		const itemType = item.type;
+		const itemName = itemIdentifier; // Use the determined identifier
+		hideItem.setAttribute('data-uttv-type', itemType);
+		hideItem.setAttribute('data-uttv-name', itemName);
+
+		// --- MODIFICATION START ---
+		hideItem.addEventListener('click', async (event) => {
 			// cancel regular click event on card
 			event.preventDefault();
 			event.stopPropagation();
 
-            const type = event.currentTarget.getAttribute('data-uttv-type');
-            const name = event.currentTarget.getAttribute('data-uttv-name');
-            logInfo('Hide Card button clicked:', type, name);
-			await onHideItem({ type: type, name: name }); // Pass a simpler object
+			const buttonClicked = event.currentTarget;
+			// *** DEBUG: Verify the button and its parent ***
+			logInfo('[Hide Card Click] Button clicked:', buttonClicked);
+			let containerToHide = buttonClicked.parentNode; // Assume direct parent initially
+			logInfo('[Hide Card Click] Initial parent node:', containerToHide);
+
+			// *** DEBUG: Verify container has expected class ***
+			const expectedContainerSelector = '.Layout-sc-1xcs6mc-0.jCGmCy, .Layout-sc-1xcs6mc-0.ScTowerItem-sc-1sjzzes-2'; // Stream or Category container
+			let isCorrectContainer = containerToHide && containerToHide.matches && containerToHide.matches(expectedContainerSelector);
+
+			if (!isCorrectContainer) {
+				logWarn('[Hide Card Click] Button parent is NOT the expected container node! Traversing up...');
+				// Attempt to find the correct container by traversing up, max 3 levels
+				let potentialContainer = containerToHide?.parentNode;
+				let levels = 0;
+				while (potentialContainer && levels < 3) {
+					logVerbose('[Hide Card Click] Traversing up to check:', potentialContainer);
+					if (potentialContainer.matches && potentialContainer.matches(expectedContainerSelector)) {
+						logWarn('[Hide Card Click] Found correct container via traversal:', potentialContainer);
+						containerToHide = potentialContainer;
+						isCorrectContainer = true;
+						break;
+					}
+					potentialContainer = potentialContainer.parentNode;
+					levels++;
+				}
+				if (!isCorrectContainer) {
+					logError('[Hide Card Click] FAILED to find correct container node via traversal. Aborting immediate hide.');
+					// Still proceed with blacklist update, but visual hide failed.
+					const type = buttonClicked.getAttribute('data-uttv-type');
+					const name = buttonClicked.getAttribute('data-uttv-name');
+					if (type && name) {
+						await onHideItem({ type: type, name: name });
+					}
+					return;
+				}
+			}
+
+			const type = buttonClicked.getAttribute('data-uttv-type');
+			const name = buttonClicked.getAttribute('data-uttv-name');
+
+			if (!type || !name) {
+				logError("[Hide Card Click] Missing data-uttv-type or data-uttv-name on button.", buttonClicked);
+				return;
+			}
+
+			logInfo(`[Hide Card Click] Attempting to hide: Type='${type}', Name='${name}'`);
+			logInfo('[Hide Card Click] Target container for hiding:', containerToHide);
+
+			// 1. Immediately hide the visual element
+			try {
+				logVerbose("[Hide Card Click] Adding .uttv-hidden-item class to container.");
+				containerToHide.classList.add('uttv-hidden-item'); // Use classList.add
+				logVerbose("[Hide Card Click] Setting data-uttv-hidden on container.");
+				containerToHide.setAttribute('data-uttv-hidden', ''); // Mark as hidden
+
+				// *** DEBUG: Check if style was applied ***
+				const computedStyle = window.getComputedStyle(containerToHide).display;
+				if (computedStyle === 'none') {
+					logInfo("[Hide Card Click] Immediate hide successful (computed style is 'none' via class).");
+				} else {
+					logError("[Hide Card Click] Immediate hide FAILED (computed style is NOT 'none', it is: " + computedStyle + "). Class might be overridden.", containerToHide);
+				}
+
+				// Also mark the original primary node if it exists
+				const primaryNode = containerToHide.querySelector('a.ScCoreLink-sc-16kq0mq-0.hcWFnG, a[data-a-target="tw-box-art-card-link"]');
+				if (primaryNode) {
+					logVerbose("[Hide Card Click] Setting data-uttv-hidden on primary node:", primaryNode);
+					primaryNode.setAttribute('data-uttv-hidden', '');
+				} else {
+					logWarn("[Hide Card Click] Could not find primary node within container to mark as hidden.");
+				}
+
+			} catch(e) {
+				logError("[Hide Card Click] Error during immediate hide:", e, containerToHide);
+			}
+
+			// 2. Proceed with blacklist update in the background
+			logVerbose("[Hide Card Click] Calling onHideItem for blacklist update.");
+			await onHideItem({ type: type, name: name }); // Pass the extracted data
 		});
+		// --- MODIFICATION END ---
 
-        // Ensure container is capable of absolute positioning
-		containerNode.style.position = 'relative';
+		// Ensure container is capable of absolute positioning
+		containerNode.style.position = 'relative'; // Make sure this is applied
 		containerNode.appendChild(hideItem);
-        logVerbose('Attached card hide button to container:', containerNode);
-
-		// IMPORTANT: Requires CSS update in directory.css to position `.uttv-hide-item` correctly
-		// Example CSS needed:
-		// .Layout-sc-1xcs6mc-0.jCGmCy .uttv-hide-item,
-        // .Layout-sc-1xcs6mc-0.gmMVaQ .uttv-hide-item {
-		//   position: absolute;
-		//   top: 5px; /* Adjust as needed */
-		//   right: 5px; /* Adjust as needed */
-		//   z-index: 100; /* Ensure visibility */
-		//   cursor: pointer;
-        //   /* Add other styling */
-		// }
+		//logVerbose('[attachHideButtonToCard] Attached card hide button to container:', containerNode); // Keep less verbose if needed
 
 		return hideItem;
 	}
@@ -1497,10 +1584,10 @@
 	function attachHideButtonsToTags(tags, tagContainerNode) {
 		logTrace('invoking attachHideButtonsToTags($, $)', tags, tagContainerNode);
 
-        if (!tags || tags.length === 0 || !tagContainerNode) {
-            //logVerbose('No tags or container provided for button attachment.');
-            return;
-        }
+		if (!tags || tags.length === 0 || !tagContainerNode) {
+			//logVerbose('No tags or container provided for button attachment.');
+			return;
+		}
 
 		const attachedKey = 'data-uttv-tags-attached';
 
@@ -1524,12 +1611,12 @@
 
 		for (let i = 0; i < tags.length; i++) {
 			const tag = tags[i];
-            const tagButtonNode = tag.node; // This should be the <button> element
+			const tagButtonNode = tag.node; // This should be the <button> element
 
-            if (!tagButtonNode || tagButtonNode.querySelector('.uttv-hide-tag')) {
-                // Skip if node is invalid or button already attached
-                continue;
-            }
+			if (!tagButtonNode || tagButtonNode.querySelector('.uttv-hide-tag')) {
+				// Skip if node is invalid or button already attached
+				continue;
+			}
 
 			const hideTagNode = hideTagTemplate.cloneNode(true);
 
@@ -1540,40 +1627,39 @@
 				event.preventDefault();
 				event.stopPropagation();
 
-                const tagName = event.currentTarget.getAttribute('data-uttv-tag-name');
+				const tagName = event.currentTarget.getAttribute('data-uttv-tag-name');
 				// Ask user to confirm action
 				const decision = confirm( chrome.i18n.getMessage('confirm_HideTag') + ' [' + tagName + ']' );
 				if (decision === true) {
-                    logInfo('Hide Tag button clicked:', tagName);
+					logInfo('Hide Tag button clicked:', tagName);
 					await onHideTag({ name: tagName }); // Pass simple object
 				}
 			});
 
-            // Make the tag button relative positioning context
-            tagButtonNode.style.position = 'relative';
-            // Append the hide button *inside* the tag button
+			// Make the tag button relative positioning context
+			tagButtonNode.style.position = 'relative';
+			// Append the hide button *inside* the tag button
 			tagButtonNode.appendChild(hideTagNode);
 
-            // Adjust padding if needed (might not be necessary if using absolute positioning)
+			// Adjust padding if needed (might not be necessary if using absolute positioning)
 			// if (renderButtons) {
 			// 	tagButtonNode.style.paddingRight = '...'; // Adjust if needed
 			// }
 		}
-         logVerbose('Attached hide buttons to', tags.length, 'tags in container:', tagContainerNode);
+		logVerbose('Attached hide buttons to', tags.length, 'tags in container:', tagContainerNode);
 
-        // IMPORTANT: Requires CSS update in directory.css for `.uttv-hide-tag`
-        // Example CSS:
-        // button.tw-tag { position: relative; /* Needed for absolute child */ }
-        // .uttv-hide-tag {
-        //   position: absolute;
-        //   top: -5px;  /* Adjust as needed */
-        //   right: -5px; /* Adjust as needed */
-        //   z-index: 101; /* Higher than card button */
-        //   cursor: pointer;
-        //   /* Add other styling (background, border-radius, etc.) */
-        // }
+		// IMPORTANT: Requires CSS update in directory.css for `.uttv-hide-tag`
+		// Example CSS:
+		// button.tw-tag { position: relative; /* Needed for absolute child */ }
+		// .uttv-hide-tag {
+		//   position: absolute;
+		//   top: -5px;  /* Adjust as needed */
+		//   right: -5px; /* Adjust as needed */
+		//   z-index: 101; /* Higher than card button */
+		//   cursor: pointer;
+		//   /* Add other styling (background, border-radius, etc.) */
+		// }
 	}
-
 
 	/**
 	 * Toggles visibility state of all present hide buttons in the directory of the current page. Returns all present hide buttons.
@@ -1584,10 +1670,10 @@
 		if (typeof state !== 'boolean') {
 			throw new Error('Argument "state" is illegal. Expected a boolean.');
 		}
-        if (!mainNode) {
-            logError('mainNode is null, cannot toggle button visibility.');
-            return [];
-        }
+		if (!mainNode) {
+			logError('mainNode is null, cannot toggle button visibility.');
+			return [];
+		}
 
 		// store state globally
 		renderButtons = state;
@@ -1598,7 +1684,7 @@
 		const buttonsLength   = buttons.length;
 
 		if (buttonsLength > 0) {
-            logInfo('Toggling', buttonsLength, 'hide buttons to state:', state);
+			logInfo('Toggling', buttonsLength, 'hide buttons to state:', state);
 			if (renderButtons === true) {
 				for (let i = 0; i < buttonsLength; i++) {
 					buttons[i].classList.remove('uttv-hidden');
@@ -1612,7 +1698,6 @@
 			logWarn('Unable to find any hide buttons to toggle. Expected:', buttonsSelector);
 		}
 
-
 		return buttons;
 	}
 
@@ -1621,21 +1706,21 @@
 	 */
 	function addManagementButton() {
 		logTrace('invoking addManagementButton()');
-        if (!mainNode) {
-            logError('mainNode is null, cannot add management button.');
-            return false;
-        }
+		if (!mainNode) {
+			logError('mainNode is null, cannot add management button.');
+			return false;
+		}
 
 		let areaSelector;
 		let area;
-        let targetParent = null; // Define parent explicitly
+		let targetParent = null; // Define parent explicitly
 
 		// --- TODO: Refine selectors for different page types as needed ---
 		switch (currentPageType) {
 			case 'frontpage':
 				areaSelector = '.root-scrollable__wrapper .front-page-carousel'; // Needs verification
 				area         = mainNode.querySelector(areaSelector);
-                targetParent = area;
+				targetParent = area;
 				break;
 
 			case 'categories': // Confirmed from twitch.tv_directory_html.txt
@@ -1643,37 +1728,37 @@
 			case 'channels':   // Assumed similar structure to 'game'
 				areaSelector = 'div[data-a-target="tags-filter-dropdown"]';
 				area         = mainNode.querySelector(areaSelector);
-                targetParent = area?.parentNode?.parentNode; // Go up two levels to the container div
+				targetParent = area?.parentNode?.parentNode; // Go up two levels to the container div
 				break;
 
 			case 'videos': // Needs verification
 				areaSelector = 'div.directory-videos-page__filters > div'; // Updated potential selector
 				area         = mainNode.querySelector(areaSelector);
-                targetParent = area;
+				targetParent = area;
 				break;
 
 			case 'clips': // Needs verification
 				areaSelector = 'div.directory-clips-page__filters'; // Updated potential selector
 				area         = mainNode.querySelector(areaSelector);
-                 targetParent = area;
+				targetParent = area;
 				break;
 
 			case 'explore': // Needs verification
 				areaSelector = '.verticals__header-wrapper';
 				area         = mainNode.querySelector(areaSelector);
-                targetParent = area?.firstChild;
+				targetParent = area?.firstChild;
 				break;
 
 			case 'following': // Needs verification for live/videos/games tabs
 				areaSelector = 'ul[role="tablist"]'; // Anchor near the tabs
 				area         = mainNode.querySelector(areaSelector);
-                 targetParent = area?.parentNode;
+				targetParent = area?.parentNode;
 				break;
 
 			case 'collection': // Needs verification
 				areaSelector = '#directory-game-main-content h1';
 				area         = mainNode.querySelector(areaSelector);
-                 targetParent = area?.parentNode;
+				targetParent = area?.parentNode;
 				break;
 
 			default:
@@ -1681,12 +1766,11 @@
 				return false; // Exit if type is unknown/unsupported
 		}
 
-        if (targetParent) {
-             return buildManagementButton(targetParent); // Pass the determined parent
-        } else {
-             logWarn('Unable to find anchor area for management button on page type:', currentPageType, 'Expected selector:', areaSelector);
-        }
-
+		if (targetParent) {
+			return buildManagementButton(targetParent); // Pass the determined parent
+		} else {
+			logWarn('Unable to find anchor area for management button on page type:', currentPageType, 'Expected selector:', areaSelector);
+		}
 
 		return false;
 	}
@@ -1697,17 +1781,16 @@
 	function buildManagementButton(areaNode, className = '', position = 'append') {
 		logTrace('invoking buildManagementButton($, $, $)', areaNode, className, position);
 
-        if (!areaNode) {
-            logError('buildManagementButton called with null areaNode.');
-            return false;
-        }
+		if (!areaNode) {
+			logError('buildManagementButton called with null areaNode.');
+			return false;
+		}
 
 		// prevent adding more than one button in the specified area
 		if (areaNode.querySelector('div[data-uttv-management]') !== null) {
 			logInfo('Management button already present in the specified area:', areaNode);
 			return false; // Button already exists
 		}
-
 
 		let container = document.createElement('div');
 		container.setAttribute('data-uttv-management', '');
@@ -1719,9 +1802,8 @@
 		if (typeof className === 'string' && className.length > 0) { // Add class only if provided
 			container.className = className;
 		}
-         // Add a base class for potential common styling
-        container.classList.add('uttv-management-container');
-
+		// Add a base class for potential common styling
+		container.classList.add('uttv-management-container');
 
 		let button = document.createElement('div');
 		button.className = 'uttv-button'; // Keep existing class
@@ -1733,7 +1815,7 @@
 		// click action for label
 		buttonText.addEventListener('click', async() => {
 			try {
-                logInfo('Opening blacklist manager from button click.');
+				logInfo('Opening blacklist manager from button click.');
 				await chrome.runtime.sendMessage({ action: 'openBlacklist' });
 			}
 			catch(error) { // Catch specific error
@@ -1744,22 +1826,22 @@
 		let buttonToggle = document.createElement('div');
 		buttonToggle.className = 'uttv-toggle'; // Keep existing class
 		buttonToggle.textContent = '👁';
-        buttonToggle.title = renderButtons ? 'Hide filter buttons' : 'Show filter buttons'; // Dynamic title
+		buttonToggle.title = renderButtons ? 'Hide filter buttons' : 'Show filter buttons'; // Dynamic title
 
 		// click action for eye symbol
 		buttonToggle.addEventListener('click', async() => {
 			const newState = !renderButtons; // Determine the target state *before* confirming
-            logInfo('Toggle visibility button clicked. Current state:', renderButtons, 'Target state:', newState);
+			logInfo('Toggle visibility button clicked. Current state:', renderButtons, 'Target state:', newState);
 			// Require confirmation only when hiding
 			if (renderButtons === true) {
 				const confirmed = confirm( chrome.i18n.getMessage('confirm_HideButtons') );
 				if (!confirmed) {
-                    logInfo('User cancelled hiding buttons.');
-                    return;
-                }
+					logInfo('User cancelled hiding buttons.');
+					return;
+				}
 			}
-            // Update the tooltip before toggling
-             buttonToggle.title = newState ? 'Hide filter buttons' : 'Show filter buttons';
+			// Update the tooltip before toggling
+			buttonToggle.title = newState ? 'Hide filter buttons' : 'Show filter buttons';
 			await toggleHideButtonsVisibility(newState);
 		});
 
@@ -1767,30 +1849,29 @@
 		button.appendChild(buttonToggle);
 		container.appendChild(button);
 
-        // Simplified positioning logic
-        try {
-            if (position === 'append') {
-                areaNode.appendChild(container);
-            } else if (position === 'prepend') {
-                // Ensure parentNode exists before attempting prepend
-                if (areaNode.parentNode) {
-                    areaNode.parentNode.insertBefore(container, areaNode); // Insert before the areaNode itself
-                } else {
-                    logError('Cannot prepend management button, areaNode has no parentNode:', areaNode);
-                    return false;
-                }
-            } else {
-                logError('Argument "position" is illegal. Expected one of: "append", "prepend". Got:', position);
-                return false;
-            }
-             logInfo('Successfully added management button.', container, 'to area:', areaNode);
-             return true;
-        } catch (error) {
-            logError('Error adding management button to areaNode:', error, areaNode, container);
-            return false;
-        }
+		// Simplified positioning logic
+		try {
+			if (position === 'append') {
+				areaNode.appendChild(container);
+			} else if (position === 'prepend') {
+				// Ensure parentNode exists before attempting prepend
+				if (areaNode.parentNode) {
+					areaNode.parentNode.insertBefore(container, areaNode); // Insert before the areaNode itself
+				} else {
+					logError('Cannot prepend management button, areaNode has no parentNode:', areaNode);
+					return false;
+				}
+			} else {
+				logError('Argument "position" is illegal. Expected one of: "append", "prepend". Got:', position);
+				return false;
+			}
+			logInfo('Successfully added management button.', container, 'to area:', areaNode);
+			return true;
+		} catch (error) {
+			logError('Error adding management button to areaNode:', error, areaNode, container);
+			return false;
+		}
 	}
-
 
 /* END: controls */
 
@@ -1852,8 +1933,7 @@
 			].join(', ');
 
 			const indicator = mainNode.querySelector(contentCardSelector);
-            const placeholderNode = rootNode.querySelector('.tw-placeholder'); // Standard Twitch placeholder
-
+			const placeholderNode = rootNode.querySelector('.tw-placeholder'); // Standard Twitch placeholder
 
 			// Condition 1: Content indicator found AND (no placeholder OR placeholder timeout reached)
 			if (indicator !== null && (placeholderNode === null || placeholderLoop >= MAX_PLACEHOLDER_LOOP)) {
@@ -1885,34 +1965,31 @@
 				} else {
 					filterSidebar('recommended'); // Filter only recommended sidebar items
 				}
-                // Always observe sidebar after initial setup
-                observeSidebar();
-
+				// Always observe sidebar after initial setup
+				observeSidebar();
 
 				// Start listening for dynamically loaded content / scroll events
 				listenToScroll();
 				// --- End Actions ---
 
 			} else if (placeholderNode !== null && placeholderLoop < MAX_PLACEHOLDER_LOOP) {
-                 placeholderLoop++;
-                 logVerbose(`Placeholder detected (loop ${placeholderLoop}/${MAX_PLACEHOLDER_LOOP}), waiting...`);
-                 // Continue polling
+				placeholderLoop++;
+				logVerbose(`Placeholder detected (loop ${placeholderLoop}/${MAX_PLACEHOLDER_LOOP}), waiting...`);
+				// Continue polling
 
-            } else if (indicator === null && onPageChangeCounter <= pageLoadTimeout) {
-                logVerbose('Page content indicator not found yet, polling again...');
-                // Continue polling if timeout not reached
+			} else if (indicator === null && onPageChangeCounter <= pageLoadTimeout) {
+				logVerbose('Page content indicator not found yet, polling again...');
+				// Continue polling if timeout not reached
 
-            } else if (onPageChangeCounter > pageLoadTimeout) {
-                 stopPageChangePolling(); // Stop interval on timeout
-                 logWarn('Stopped polling in onPageChange(): Page did not load indicator within timeout.', page);
-                 // Attempt sidebar observation anyway
-                 observeSidebar();
-            }
-
+			} else if (onPageChangeCounter > pageLoadTimeout) {
+				stopPageChangePolling(); // Stop interval on timeout
+				logWarn('Stopped polling in onPageChange(): Page did not load indicator within timeout.', page);
+				// Attempt sidebar observation anyway
+				observeSidebar();
+			}
 
 		}, pageLoadMonitorInterval);
 	}
-
 
 	/**
 	 * Event that is emitted by hide buttons on cards in the directory of the current page.
@@ -1938,7 +2015,6 @@
 		await putBlacklistedItems(storedBlacklistedItems);
 	}
 
-
 	/**
 	 * Event that is emitted by hide buttons on tags in the directory of the current page.
 	 * UPDATE: Reads data attribute from the button itself.
@@ -1951,7 +2027,7 @@
 			return false;
 		}
 
-        const tagName = tagData.name; // Name comes from data attribute
+		const tagName = tagData.name; // Name comes from data attribute
 		logInfo('Adding tag to blacklist:', tagName);
 
 		// Update cache
@@ -1964,7 +2040,6 @@
 		await putBlacklistedItems(storedBlacklistedItems);
 	}
 
-
 	/**
 	 * Event that is emitted whenever unprocessed items appear in the directory of the current page. Returns if filtering was invoked.
 	 */
@@ -1975,33 +2050,32 @@
 			logWarn('Cancelled onScroll event, page load is in progress.');
 			return false;
 		}
-         if (directoryFilterRunning === true) {
-            logWarn('Cancelled onScroll event, directory filter already running.');
-            return false;
-        }
+		if (directoryFilterRunning === true) {
+			logWarn('Cancelled onScroll event, directory filter already running.');
+			return false;
+		}
 
 		let remainingItems;
 
-        logInfo('Scroll/Dynamic content detected, filtering unprocessed items...');
+		logInfo('Scroll/Dynamic content detected, filtering unprocessed items...');
 
 		if (currentPageType === 'following' && hideFollowing === false) {
-            // Only filter recommended items if on 'following' and filtering is disabled for followed items
+			// Only filter recommended items if on 'following' and filtering is disabled for followed items
 			remainingItems = filterDirectory('recommended', true); // Target recommended specifically if they appear dynamically
-            filterDirectory('unprocessed', false); // Mark any other new items as processed without hiding
+			filterDirectory('unprocessed', false); // Mark any other new items as processed without hiding
 		} else {
-            // Filter all newly appeared items
+			// Filter all newly appeared items
 			remainingItems = filterDirectory('unprocessed', true);
 		}
 
-        if (remainingItems.length > 0) {
-            logInfo('Attaching buttons to', remainingItems.length, 'newly processed items.');
-		    attachHideButtons(remainingItems);
-        } else {
-             logVerbose('No new items remained after filtering dynamically loaded content.');
-        }
+		if (remainingItems.length > 0) {
+			logInfo('Attaching buttons to', remainingItems.length, 'newly processed items.');
+			attachHideButtons(remainingItems);
+		} else {
+			logVerbose('No new items remained after filtering dynamically loaded content.');
+		}
 		return true;
 	}
-
 
 /* END: events */
 
@@ -2025,7 +2099,6 @@
 			collection = {};
 		}
 
-
 		const itemTypesLength = itemTypes.length;
 		for (let i = 0; i < itemTypesLength; i++) {
 
@@ -2033,19 +2106,18 @@
 
 			// Ensure each type exists and is an object (for map types) or array (for titles)
 			if (collection[itemType] === undefined) {
-                collection[itemType] = (itemType === 'titles') ? [] : {};
+				collection[itemType] = (itemType === 'titles') ? [] : {};
 			} else if (itemType === 'titles' && !Array.isArray(collection[itemType])) {
-                 logWarn('Correcting non-array titles blacklist to array.');
-                 collection[itemType] = []; // Force titles to be an array
-            } else if (itemType !== 'titles' && (typeof collection[itemType] !== 'object' || Array.isArray(collection[itemType]) || collection[itemType] === null)) {
-                 logWarn('Correcting non-object', itemType, 'blacklist to object.');
-                 collection[itemType] = {}; // Force others to be objects
-            }
+				logWarn('Correcting non-array titles blacklist to array.');
+				collection[itemType] = []; // Force titles to be an array
+			} else if (itemType !== 'titles' && (typeof collection[itemType] !== 'object' || Array.isArray(collection[itemType]) || collection[itemType] === null)) {
+				logWarn('Correcting non-object', itemType, 'blacklist to object.');
+				collection[itemType] = {}; // Force others to be objects
+			}
 		}
 
 		return collection;
 	}
-
 
 	/**
 	 * Retrieves all blacklisted items from the storage.
@@ -2054,29 +2126,28 @@
 		logTrace('invoking getBlacklistedItems()');
 
 		let blacklistedItems = {};
-        try {
-            const result = await storageGet(null); // Get all storage data for the current mode
+		try {
+			const result = await storageGet(null); // Get all storage data for the current mode
 
-            if (result) { // Check if result is not null/undefined
-                if (typeof result.blacklistedItems === 'object' && result.blacklistedItems !== null) {
-                    blacklistedItems = result.blacklistedItems;
-                    logVerbose('Loaded single blacklist object.');
-                } else if (typeof result['blItemsFragment0'] === 'object') {
-                    blacklistedItems = mergeBlacklistFragments(result);
-                    logVerbose('Merged fragments to blacklist:', Object.keys(result).filter(k => k.startsWith('blItemsFragment')).length, 'fragments processed.');
-                } else {
-                    logWarn('No valid blacklist data found in storage.');
-                }
-            } else {
-                 logWarn('Storage retrieval returned null/undefined.');
-            }
-        } catch (error) {
-             logError('Error retrieving blacklist items:', error);
-        }
-
+			if (result) { // Check if result is not null/undefined
+				if (typeof result.blacklistedItems === 'object' && result.blacklistedItems !== null) {
+					blacklistedItems = result.blacklistedItems;
+					logVerbose('Loaded single blacklist object.');
+				} else if (typeof result['blItemsFragment0'] === 'object') {
+					blacklistedItems = mergeBlacklistFragments(result);
+					logVerbose('Merged fragments to blacklist:', Object.keys(result).filter(k => k.startsWith('blItemsFragment')).length, 'fragments processed.');
+				} else {
+					logWarn('No valid blacklist data found in storage.');
+				}
+			} else {
+				logWarn('Storage retrieval returned null/undefined.');
+			}
+		} catch (error) {
+			logError('Error retrieving blacklist items:', error);
+		}
 
 		// Ensure the final object is initialized correctly
-        return initBlacklistedItems(blacklistedItems);
+		return initBlacklistedItems(blacklistedItems);
 	}
 
 	/**
@@ -2092,33 +2163,33 @@
 			const type = arg1;
 			const term = arg2;
 
-            // Ensure the type exists in the main blacklist object
+			// Ensure the type exists in the main blacklist object
 			if (storedBlacklistedItems[type] === undefined) {
 				storedBlacklistedItems[type] = (type === 'titles') ? [] : {};
 			}
 
-            // Add to main blacklist object
-            if(type === 'titles') {
-                if (!storedBlacklistedItems[type].includes(term)) {
-                    storedBlacklistedItems[type].push(term);
-                }
-            } else {
-			    storedBlacklistedItems[type][term] = 1;
-            }
+			// Add to main blacklist object
+			if(type === 'titles') {
+				if (!storedBlacklistedItems[type].includes(term)) {
+					storedBlacklistedItems[type].push(term);
+				}
+			} else {
+				storedBlacklistedItems[type][term] = 1;
+			}
 
 			// Clear and rebuild specific cache type for the single item
 			if (isExactTerm(term)) {
 				cacheExactTerms[type] = cacheExactTerms[type] || [];
 				const exactVal = term.substring(1, term.length - 1);
-                if (!cacheExactTerms[type].includes(exactVal)) {
-                     cacheExactTerms[type].push(exactVal);
-                }
+				if (!cacheExactTerms[type].includes(exactVal)) {
+					cacheExactTerms[type].push(exactVal);
+				}
 			} else if (isLooseTerm(term)) {
 				cacheLooseTerms[type] = cacheLooseTerms[type] || [];
-                const looseVal = term.substring(1);
-                 if (!cacheLooseTerms[type].includes(looseVal)) {
-				    cacheLooseTerms[type].push(looseVal);
-                 }
+				const looseVal = term.substring(1);
+				if (!cacheLooseTerms[type].includes(looseVal)) {
+					cacheLooseTerms[type].push(looseVal);
+				}
 			} else if (isRegExpTerm(term)) {
 				cacheRegExpTerms[type] = cacheRegExpTerms[type] || [];
 				const regexp = toRegExp(term);
@@ -2126,7 +2197,7 @@
 					cacheRegExpTerms[type].push(regexp);
 				}
 			}
-             logVerbose('Added single item to cache:', type, term);
+			logVerbose('Added single item to cache:', type, term);
 
 		// Overload 2: modifyBlacklistedItems(fullBlacklistObject) - Replace entire cache
 		} else if (typeof arg1 === 'object' && arg1 !== null && arg2 === undefined) {
@@ -2140,54 +2211,53 @@
 
 			logVerbose('Rebuilding all blacklist caches...');
 			for (const itemType in items) {
-                if (!items.hasOwnProperty(itemType)) continue;
+				if (!items.hasOwnProperty(itemType)) continue;
 
-                let terms;
-                if (Array.isArray(items[itemType])) { // Handle titles array
-                    terms = items[itemType];
-                } else if (typeof items[itemType] === 'object' && items[itemType] !== null){ // Handle category/channel/tag objects
-                    terms = Object.keys(items[itemType]);
-                } else {
-                    logWarn('Unexpected data structure for itemType:', itemType, items[itemType]);
-                    continue; // Skip invalid types
-                }
-
+				let terms;
+				if (Array.isArray(items[itemType])) { // Handle titles array
+					terms = items[itemType];
+				} else if (typeof items[itemType] === 'object' && items[itemType] !== null){ // Handle category/channel/tag objects
+					terms = Object.keys(items[itemType]);
+				} else {
+					logWarn('Unexpected data structure for itemType:', itemType, items[itemType]);
+					continue; // Skip invalid types
+				}
 
 				for (const term of terms) {
-                    if (typeof term !== 'string') continue; // Skip non-string terms
+					if (typeof term !== 'string') continue; // Skip non-string terms
 
 					if (isExactTerm(term)) {
 						cacheExactTerms[itemType] = cacheExactTerms[itemType] || [];
-                        const exactVal = term.substring(1, term.length - 1);
-                        if (!cacheExactTerms[itemType].includes(exactVal)) {
-                            cacheExactTerms[itemType].push(exactVal);
-                        }
+						const exactVal = term.substring(1, term.length - 1);
+						if (!cacheExactTerms[itemType].includes(exactVal)) {
+							cacheExactTerms[itemType].push(exactVal);
+						}
 					} else if (isLooseTerm(term)) {
 						cacheLooseTerms[itemType] = cacheLooseTerms[itemType] || [];
-                         const looseVal = term.substring(1);
-                         if (!cacheLooseTerms[itemType].includes(looseVal)) {
-						    cacheLooseTerms[itemType].push(looseVal);
-                         }
+						const looseVal = term.substring(1);
+						if (!cacheLooseTerms[itemType].includes(looseVal)) {
+							cacheLooseTerms[itemType].push(looseVal);
+						}
 					} else if (isRegExpTerm(term)) {
 						cacheRegExpTerms[itemType] = cacheRegExpTerms[itemType] || [];
 						const regexp = toRegExp(term);
-                        if (regexp && !cacheRegExpTerms[itemType].some(r => r.toString() === regexp.toString())) {
-                            cacheRegExpTerms[itemType].push(regexp);
-                        }
+						if (regexp && !cacheRegExpTerms[itemType].some(r => r.toString() === regexp.toString())) {
+							cacheRegExpTerms[itemType].push(regexp);
+						}
 					}
-                    // Regular terms are implicitly handled by the main storedBlacklistedItems check
+					// Regular terms are implicitly handled by the main storedBlacklistedItems check
 				}
 			}
-            logVerbose('Finished rebuilding caches.');
+			logVerbose('Finished rebuilding caches.');
 		} else {
-            logError('Invalid arguments passed to modifyBlacklistedItems:', arg1, arg2);
-        }
-         // Log cache sizes for debugging
-        // logVerbose('Cache sizes:',
-        //     'Exact:', Object.values(cacheExactTerms).reduce((sum, arr) => sum + arr.length, 0),
-        //     'Loose:', Object.values(cacheLooseTerms).reduce((sum, arr) => sum + arr.length, 0),
-        //     'RegExp:', Object.values(cacheRegExpTerms).reduce((sum, arr) => sum + arr.length, 0)
-        // );
+			logError('Invalid arguments passed to modifyBlacklistedItems:', arg1, arg2);
+		}
+		// Log cache sizes for debugging
+		// logVerbose('Cache sizes:',
+		//     'Exact:', Object.values(cacheExactTerms).reduce((sum, arr) => sum + arr.length, 0),
+		//     'Loose:', Object.values(cacheLooseTerms).reduce((sum, arr) => sum + arr.length, 0),
+		//     'RegExp:', Object.values(cacheRegExpTerms).reduce((sum, arr) => sum + arr.length, 0)
+		// );
 	}
 
 	/**
@@ -2201,7 +2271,6 @@
 			return; // Don't proceed with invalid data
 		}
 
-
 		const mode   = await getStorageMode();
 		const isSync = (mode === 'sync');
 
@@ -2209,10 +2278,8 @@
 			logWarn('Attempting to restore backup to storage:', items);
 		}
 
-
 		// Always use a clone to avoid modifying the live cache during async ops
-        const itemsToStore = initBlacklistedItems(cloneBlacklistItems(items));
-
+		const itemsToStore = initBlacklistedItems(cloneBlacklistItems(items));
 
 		let dataToStore = { 'blacklistedItems': itemsToStore };
 		let requiresSplitting = false;
@@ -2224,32 +2291,30 @@
 				requiresSplitting = true;
 				dataToStore = splitBlacklistItems(itemsToStore); // Use the cloned, initialized data
 				if (Object.keys(dataToStore).length > storageSyncMaxKeys) {
-                     logError('Cannot save blacklist: Number of fragments (' + Object.keys(dataToStore).length + ') exceeds MAX_ITEMS (' + storageSyncMaxKeys + ').');
-                     // Optionally, attempt to save to local storage instead or alert user
-                     alert(chrome.i18n.getMessage('alert_StorageQuota')); // Inform user
-                     // Force switch to local storage and try saving there
-                     await chrome.storage.local.set({ 'useLocalStorage': true });
-                     logWarn('Forcing switch to local storage due to sync quota limits.');
-                     await putBlacklistedItems(items, false); // Retry with local, don't loop recovery
-                     return; // Exit after attempting local save
-                }
+					logError('Cannot save blacklist: Number of fragments (' + Object.keys(dataToStore).length + ') exceeds MAX_ITEMS (' + storageSyncMaxKeys + ').');
+					// Optionally, attempt to save to local storage instead or alert user
+					alert(chrome.i18n.getMessage('alert_StorageQuota')); // Inform user
+					// Force switch to local storage and try saving there
+					await chrome.storage.local.set({ 'useLocalStorage': true });
+					logWarn('Forcing switch to local storage due to sync quota limits.');
+					await putBlacklistedItems(items, false); // Retry with local, don't loop recovery
+					return; // Exit after attempting local save
+				}
 				logVerbose('Splitting of blacklist completed. Fragments:', Object.keys(dataToStore).length);
 			}
 		}
 
-        // Clear previous data structure (either single key or fragments) before setting new data
-        const keysToRemove = ['blacklistedItems'];
-        for (let i = 0; i < storageMaxFragments; i++) { // Use defined constant
-            keysToRemove.push('blItemsFragment' + i);
-        }
-        logVerbose('Clearing previous blacklist keys:', keysToRemove);
-        await storageRemove(keysToRemove); // Ensure removal finishes before setting
-
+		// Clear previous data structure (either single key or fragments) before setting new data
+		const keysToRemove = ['blacklistedItems'];
+		for (let i = 0; i < storageMaxFragments; i++) { // Use defined constant
+			keysToRemove.push('blItemsFragment' + i);
+		}
+		logVerbose('Clearing previous blacklist keys:', keysToRemove);
+		await storageRemove(keysToRemove); // Ensure removal finishes before setting
 
 		// Now set the new data (either single object or fragments)
-        logVerbose('Attempting to save data to', mode, 'storage:', dataToStore);
+		logVerbose('Attempting to save data to', mode, 'storage:', dataToStore);
 		const error = await storageSet(dataToStore);
-
 
 		// Handle potential errors
 		if (error) { // Check if error object exists
@@ -2261,29 +2326,29 @@
 				if (error.message && error.message.includes('QUOTA_BYTES')) {
 					alertMessage = chrome.i18n.getMessage('alert_StorageQuota');
 				} else if (error.message && error.message.includes('MAX_ITEMS')) {
-                    alertMessage = chrome.i18n.getMessage('alert_StorageQuota'); // Often related if splitting failed
-                } else if (error.message && error.message.includes('MAX_WRITE_OPERATIONS_PER')) {
+					alertMessage = chrome.i18n.getMessage('alert_StorageQuota'); // Often related if splitting failed
+				} else if (error.message && error.message.includes('MAX_WRITE_OPERATIONS_PER')) {
 					alertMessage = chrome.i18n.getMessage('alert_StorageThrottle');
 				}
 				alert(alertMessage + suffix);
 
-                // If sync failed, force switch to local and retry ONLY ONCE without recovery loop
-                if (isSync) {
-                    logWarn('Sync save failed. Forcing switch to local storage and attempting recovery.');
-                    await chrome.storage.local.set({ 'useLocalStorage': true });
-                    await putBlacklistedItems(backupBlacklistedItems, false); // Use backup, prevent recovery loop
-                } else {
-                     logError('Local storage save also failed. Cannot recover.');
-                     // Maybe restore the in-memory cache from backup?
-                     modifyBlacklistedItems(backupBlacklistedItems);
-                }
+				// If sync failed, force switch to local and retry ONLY ONCE without recovery loop
+				if (isSync) {
+					logWarn('Sync save failed. Forcing switch to local storage and attempting recovery.');
+					await chrome.storage.local.set({ 'useLocalStorage': true });
+					await putBlacklistedItems(backupBlacklistedItems, false); // Use backup, prevent recovery loop
+				} else {
+					logError('Local storage save also failed. Cannot recover.');
+					// Maybe restore the in-memory cache from backup?
+					modifyBlacklistedItems(backupBlacklistedItems);
+				}
 			} else {
-                 logError('Recovery attempt failed or was disabled. Blacklist may not be saved correctly.');
-                 // Restore cache from backup if recovery wasn't attempted or failed
-                 modifyBlacklistedItems(backupBlacklistedItems);
-            }
+				logError('Recovery attempt failed or was disabled. Blacklist may not be saved correctly.');
+				// Restore cache from backup if recovery wasn't attempted or failed
+				modifyBlacklistedItems(backupBlacklistedItems);
+			}
 		} else {
-            logInfo('Blacklist successfully saved to', mode, 'storage.');
+			logInfo('Blacklist successfully saved to', mode, 'storage.');
 			// Synchronize new items among tabs (send the original structure)
 			await syncBlacklistedItems(itemsToStore); // Send the data that was intended to be saved
 
@@ -2295,28 +2360,26 @@
 		}
 	}
 
-
 	/**
 	 * Informs all tabs (including the one that invokes this function) about the provided items in order to keep them synchronized.
 	 */
 	async function syncBlacklistedItems(items) {
-        logVerbose('Broadcasting blacklist update to other tabs...');
+		logVerbose('Broadcasting blacklist update to other tabs...');
 		try {
-            // Send message without waiting for responses from all tabs
+			// Send message without waiting for responses from all tabs
 			chrome.runtime.sendMessage({ blacklistedItems: items, storage: false }).catch(error => {
-                // Log errors if sending fails (e.g., no listeners), but don't block
-                 if (error.message.includes("Could not establish connection")) {
-                     logVerbose("No other active Twitch tabs to sync with.");
-                 } else {
-                     logError('Error broadcasting blacklist sync message:', error);
-                 }
-            });
+				// Log errors if sending fails (e.g., no listeners), but don't block
+				if (error.message.includes("Could not establish connection")) {
+					logVerbose("No other active Twitch tabs to sync with.");
+				} else {
+					logError('Error broadcasting blacklist sync message:', error);
+				}
+			});
 		}
 		catch (error) { // Catch synchronous errors during send setup
 			logError('Failed to initiate blacklist synchronization:', error);
 		}
 	}
-
 
 /* END: blacklist */
 
@@ -2332,7 +2395,7 @@
 			return logWarn('Aborting init(), already initialized.');
 		}
 		initRun = true;
-        logInfo('Extension Core Initialization Starting...');
+		logInfo('Extension Core Initialization Starting...');
 
 		// Prepare blacklist (regardless of the current page support)
 		const blacklistedItems = await getBlacklistedItems();
@@ -2340,15 +2403,14 @@
 		// Initialize defaults and cache blacklisted items from storage
 		modifyBlacklistedItems(blacklistedItems); // This also initializes if empty and builds caches
 		logInfo('Blacklist loaded and caches built. Items:',
-            Object.keys(storedBlacklistedItems.categories || {}).length, 'categories,',
-            Object.keys(storedBlacklistedItems.channels || {}).length, 'channels,',
-            Object.keys(storedBlacklistedItems.tags || {}).length, 'tags,',
-            (storedBlacklistedItems.titles || []).length, 'titles.'
-        );
+			Object.keys(storedBlacklistedItems.categories || {}).length, 'categories,',
+			Object.keys(storedBlacklistedItems.channels || {}).length, 'channels,',
+			Object.keys(storedBlacklistedItems.tags || {}).length, 'tags,',
+			(storedBlacklistedItems.titles || []).length, 'titles.'
+		);
 
 		// Create initial backup
 		backupBlacklistedItems = cloneBlacklistItems(storedBlacklistedItems);
-
 
 		/* BEGIN: root */
 			// Ensure rootNode is set, default to document if needed
@@ -2358,15 +2420,14 @@
 				logWarn('Root node (#root) not found. Using document as rootNode.');
 				rootNode = document;
 			} else {
-                 logVerbose('Root node found:', rootNode);
-            }
+				logVerbose('Root node found:', rootNode);
+			}
 		/* END: root */
 
 		// Start page processing
 		onPageChange(currentPage); // Trigger initial page processing
-        logInfo('Extension Core Initialization Complete.');
+		logInfo('Extension Core Initialization Complete.');
 	}
-
 
 	/**
 	 * Retrieves the extension state from storage.
@@ -2382,13 +2443,12 @@
 		];
 		let result = {}; // Default empty object
 
-        try {
-            result = await storageGet(stateKeys);
-            if (!result) result = {}; // Ensure result is an object even if storageGet returns null/undefined
-        } catch(error) {
-            logError("Error getting extension state from storage:", error);
-        }
-
+		try {
+			result = await storageGet(stateKeys);
+			if (!result) result = {}; // Ensure result is an object even if storageGet returns null/undefined
+		} catch(error) {
+			logError("Error getting extension state from storage:", error);
+		}
 
 		// Set defaults first, then override if value exists in storage result
 		enabled = (typeof result['enabled'] === 'boolean') ? result['enabled'] : true;
@@ -2398,7 +2458,6 @@
 
 		logInfo('Extension State Initialized:', { enabled, renderButtons, hideFollowing, hideReruns });
 	}
-
 
 	/**
 	 * Waits for the DOM to load, then starts initialization.
@@ -2412,7 +2471,6 @@
 		if (enabled === false) {
 			return logWarn('Extension is disabled. Aborting page initialization.');
 		}
-
 
 		// Start core initialization
 		await init();
