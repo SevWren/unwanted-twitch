@@ -1,0 +1,163 @@
+﻿<link rel="stylesheet" type="text/css" href="/styles/common.css">
+<link rel="stylesheet" type="text/css" href="/styles/blacklist.css">
+<div id="blacklist">
+
+	<div class="settings">
+
+		<div class="left">
+
+			<h2>
+				Settings
+			</h2>
+
+			<div class="following checkable">
+				<input type="checkbox" id="hideFollowing" /> <label for="hideFollowing" id="label_hideFollowing">Also filter Followed Channels</label>
+			</div>
+
+			<div class="reruns checkable">
+				<input type="checkbox" id="hideReruns" /> <label for="hideReruns" id="label_hideReruns">Hide Stream Reruns</label>
+			</div>
+
+		</div><!--
+
+		--><div class="right">
+
+			<div class="storage-mode checkable">
+				<input type="checkbox" checked id="useSyncStorage" /> <label for="useSyncStorage" id="label_useSyncStorage">Synchronize Blacklist via Cloud</label>
+			</div>
+
+			<div class="storage-stats">
+				<span id="storageSize_sync">?</span> bytes used in &nbsp;sync storage<br>
+				<span id="storageSize_local">?</span> bytes used in local storage<br>
+			</div>
+
+			<button type="button" id="clearStorages" style="display: none;">
+				Clear Storages
+			</button>
+
+		</div>
+
+	</div>
+
+	<div class="area left">
+		<table>
+			<thead>
+				<th colspan="2">
+					<span id="column_Categories">Blacklisted Categories</span> <span class="count"></span>
+					<button type="button" class="clear">Remove All</button>
+				</th>
+			</thead>
+			<tbody id="table_categories">
+				<tr class="input">
+					<td>
+						<input type="text" placeholder="Pattern of Category to blacklist" /><br>
+						<span is-pattern class="hint">Show supported patterns...</span>
+					</td>
+					<td>
+						<button type="button" class="add">Add</button>
+					</td>
+				</tr>
+			</tbody>
+		</table>
+	</div><!--
+
+	--><div class="area center-left">
+		<table>
+			<thead>
+				<th colspan="2">
+					<span id="column_Channels">Blacklisted Channels</span> <span class="count"></span>
+					<button type="button" class="clear">Remove All</button>
+				</th>
+			</thead>
+			<tbody id="table_channels">
+				<tr class="input">
+					<td>
+						<input type="text" placeholder="Pattern of Channel to blacklist" /><br>
+						<span is-pattern class="hint">Show supported patterns...</span>
+					</td>
+					<td>
+						<button type="button" class="add">Add</button>
+					</td>
+				</tr>
+			</tbody>
+		</table>
+	</div><!--
+
+	--><div class="area center-right">
+		<table>
+			<thead>
+				<th colspan="2">
+					<span id="column_Tags">Blacklisted Tags</span> <span class="count"></span>
+					<button type="button" class="clear">Remove All</button>
+				</th>
+			</thead>
+			<tbody id="table_tags">
+				<tr class="input">
+					<td>
+						<input type="text" placeholder="Pattern of Tag to blacklist" /><br>
+						<span is-pattern class="hint">Show supported patterns...</span>
+					</td>
+					<td>
+						<button type="button" class="add">Add</button>
+					</td>
+				</tr>
+			</tbody>
+		</table>
+	</div><!--
+
+	--><div class="area right">
+		<table>
+			<thead>
+				<th colspan="2">
+					<span id="column_Titles">Blacklisted Titles</span> <span class="count"></span>
+					<button type="button" class="clear">Remove All</button>
+				</th>
+			</thead>
+			<tbody id="table_titles">
+				<tr class="input">
+					<td>
+						<input type="text" placeholder="Pattern in Title to blacklist" /><br>
+						<span is-pattern class="hint">Show supported patterns...</span>
+					</td>
+					<td>
+						<button type="button" class="add">Add</button>
+					</td>
+				</tr>
+			</tbody>
+		</table>
+	</div>
+
+	<div class="actions">
+
+		<div class="left">
+
+			<button type="button" class="lowlight" id="import">
+				Import
+			</button>
+			<button type="button" class="lowlight" id="export">
+				Export
+			</button>
+
+		</div>
+
+		<div class="center">
+
+			<button type="button" id="save">
+				Save
+			</button>
+			<button type="button" id="cancel">
+				Cancel
+			</button>
+
+		</div>
+
+	</div>
+
+	<div id="processing" hidden>
+		<span>Loading. Please wait...</span>
+	</div>
+
+</div>
+<script src="/scripts/common.js"></script>
+<script src="/scripts/storage.js"></script>
+<script src="/scripts/blacklist.js"></script>

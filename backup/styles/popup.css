@@ -1,0 +1,28 @@
+﻿#popup {
+	text-align: right;
+	width: 256px;
+}
+
+#icon {
+	background-image: url('/images/icon48.png');
+	background-repeat: no-repeat;
+	height: 48px;
+	position: absolute;
+	width: 48px;
+}
+	#icon.disabled {
+		filter: grayscale(100%);
+	}
+
+.action {
+	margin-bottom: 8px;
+}
+	.action:last-child {
+		margin-bottom: 0px;
+	}
+
+.toggle-x {
+	color: #A0A0A0;
+	font-size: 11px;
+	margin-top: 16px;
+}
