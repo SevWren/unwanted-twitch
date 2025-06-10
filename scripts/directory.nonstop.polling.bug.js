@@ -1,3 +1,68 @@
+/* ==========================================================================
+   SUMMARY OF MAJOR FIXES AND ARCHITECTURAL CHANGES (June 2025)
+   Compare this VS the current official repo version to update with ENTIRE version differences
+   ==========================================================================
+   This file has been significantly refactored to work with the modern Twitch
+   UI and to fix critical performance and logic issues. The original script
+   was non-functional due to major changes in Twitch's front-end code.
+
+   The key changes are as follows:
+
+   1. COMPLETE SELECTOR OVERHAUL:
+      - PROBLEM: The original script relied entirely on stable `data-a-target`
+        attributes (e.g., `preview-card-image-link`, `tw-card-avatar-link`)
+        which Twitch has completely removed from directory and channel cards.
+      - SOLUTION: All DOM selectors were rewritten to be more robust. They
+        now rely on HTML structure and more stable attributes like `class`,
+        `href`, and `title` (e.g., `h2[title]` for category names,
+        `a.side-nav-card` for the sidebar, `button.tw-tag` for tags).
+
+   2. CONTEXT-AWARE PARSING FOR DIFFERENT PAGE TYPES:
+      - PROBLEM: The HTML structure for the main category directory (`/directory`)
+        is completely different from a channel listing page
+        (`/directory/category/...`). A single parsing function failed.
+      - SOLUTION: The script is now "context-aware."
+        - It uses the existing `getPageType()` function to identify if it is on
+          a `categories` or `channels` page.
+        - A new parser, `readCategoryCard()`, was created specifically for
+          the main directory's game cards.
+        - The `getDirectoryItems()` function now acts as a "router," calling
+          the correct parsing function (`readCategoryCard` or `readChannel`)
+          based on the current page type.
+
+   3. CORRECT ELEMENT HIDING ON GRID LAYOUTS:
+      - PROBLEM: On the main `/directory` page, hiding the `.game-card` element
+        left a large empty space in the grid, as the parent grid container
+        was still present.
+      - SOLUTION: The `readCategoryCard()` parser was updated to traverse UP
+        the DOM from the `.game-card` using `.closest('div[style*="order"]')`.
+        This finds the true parent grid item, which is now the element that
+        gets hidden, allowing the CSS grid to reflow correctly.
+
+   4. *NOT IMPLEMENTED YET! TODO* 
+      - REPLACED `setInterval` WITH `MutationObserver` TO FIX INFINITE LOOP:
+      - PROBLEM: The original `setInterval` polling method caused an infinite
+        loop and spammed the console. The script would hide an element,
+        Twitch's React framework would immediately re-render it (without our
+        modifications), and the `setInterval` would find and process the
+        "new" element again, endlessly.
+      - SOLUTION: The entire `setInterval` polling logic (`itemPollInterval`
+        and `checkForNewDirectoryItems`) was REMOVED. It has been replaced
+        with a modern and highly efficient `MutationObserver`.
+        - The `MutationObserver` watches the main content area (`.tw-tower`)
+          and only triggers when Twitch's framework *actually adds new nodes*
+          to the DOM (e.g., during an infinite scroll).
+        - This eliminates the performance-draining loop and works cooperatively
+          with the website's framework instead of fighting against it.
+
+   These changes make the extension faster, more stable, and significantly
+   more resilient to future minor UI updates from Twitch.
+   ========================================================================== */
+
+
+
+
+
 // jshint esversion: 6
 // jshint -W069
 // jshint -W083
@@ -285,6 +350,9 @@ function filterSidebar() {
     }
 }
 
+
+/*
+DISABLING TEMPORARY TO TEST Deleting VS Hiding Elements
 // Generic function to filter a list of parsed items
 function filterItems(items, hideClass) {
     const toHide = [];
@@ -307,6 +375,32 @@ function filterItems(items, hideClass) {
     }
     return remaining;
 }
+
+*/
+
+
+// --- NEW DELETION CODE (Temporary Test) ---
+function filterItems(items, hideClass) { // The hideClass parameter is now unused but we'll leave it
+    const remaining = [];
+    for (const item of items) {
+        if (!item?.containerNode) continue;
+
+        // We still need to mark the node so our script *thinks* it's processed
+        item.containerNode.setAttribute('data-uttv-processed', 'true');
+
+        if (isBlacklistedItem(item)) {
+            // Instead of adding to an array, we remove the element directly
+            item.containerNode.remove(); 
+            logVerbose(`Removed item: ${item.name}`);
+        } else {
+            remaining.push(item);
+        }
+    }
+    // No need to loop through a 'toHide' array anymore
+    return remaining;
+}
+
+
 
 /* ==========================================================================
    DOM Selectors & Parsing (MOST CRITICAL FIXES ARE HERE)
@@ -461,7 +555,10 @@ function readChannel(containerNode) {
     };
 }
 
+
+/*
 // --- NEW FUNCTION --- Since the structure of a category card is different, we need a new function specifically to parse it. We'll name it readCategoryCard. MON AM
+// --- Only partially working.  Testing replacement
 
 function readCategoryCard(containerNode) {
     // The most reliable element for the name is the h2 tag with a title attribute.
@@ -489,6 +586,47 @@ function readCategoryCard(containerNode) {
         containerNode: containerNode
     };
 }
+*/
+
+
+
+// --- NEW, CORRECTED CODE ---
+function readCategoryCard(containerNode) {
+    // The parsing logic you have is correct, so we keep it.
+    const nameNode = containerNode.querySelector('h2[title]');
+    if (!nameNode) return null;
+
+    const name = nameNode.getAttribute('title').trim();
+    if (!name) return null;
+
+    const tagNodes = containerNode.querySelectorAll('button.tw-tag');
+    const tags = [];
+    tagNodes.forEach(tagNode => {
+        const tagName = tagNode.textContent.trim();
+        if (tagName) tags.push({ name: tagName, node: tagNode });
+    });
+
+    // --- THE FIX IS HERE ---
+    // Find the true parent grid item by looking for the element with the 'order' style.
+    // The .closest() method is perfect for this. It travels up the DOM tree.
+    const gridItemContainer = containerNode.closest('div[style*="order"]');
+
+    return {
+        type: 'categories',
+        name: name,
+        category: name,
+        title: '',
+        tags: tags,
+        rerun: false,
+        // Return the correct grid container instead of the inner card.
+        // If it can't be found, default back to the original node to prevent errors.
+        containerNode: gridItemContainer || containerNode
+    };
+}
+
+
+
+
 
 
 /*

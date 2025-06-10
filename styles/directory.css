@@ -6,66 +6,57 @@
 */
 
 /*
- * Original Comment Block (Retained for context):
- * Added For Debuging.
- * Added for possible conflicts between .uttv-hidden and the new layout - Verify
- * TODO: Confirm if still needed
- */
-
-/*
- * FORK CHANGE: Added .uttv-hidden-item as a dedicated class for this fork.
- * PURPOSE: To prevent potential CSS conflicts or unintended style overrides
- *          if the original extension's CSS for `.uttv-hidden` is updated
- *          or targets different elements. This ensures this fork can reliably
- *          hide its specific elements without interference.
- * FUNCTION: It performs the exact same function as `.uttv-hidden` (hiding elements)
- *           but uses a unique name for isolation within this fork.
- * STATUS: This class should be used instead of `.uttv-hidden` for elements
- *         hidden specifically by this fork's logic.
+ * .uttv-hidden-item: The primary class used by directory.js to hide filtered elements.
+ * Using a unique name prevents conflicts with the original extension's CSS.
+ * This rule is the most fundamental part of the extension's filtering capability.
  */
 .uttv-hidden-item {
     display: none !important;
 }
 
 /*
- * ORIGINAL CLASS: .uttv-hidden
- * NOTE: This class likely exists in the original extension.
- *       This fork introduced `.uttv-hidden-item` (see above) to avoid
- *       potential conflicts. Usage of `.uttv-hidden` directly in this fork
- *       should be reviewed to see if `.uttv-hidden-item` is more appropriate.
- *       The original TODO "Confirm if still needed" likely refers to whether
- *       this original class is still necessary *at all* in the fork, or if
- *       all hiding functions have been migrated to `.uttv-hidden-item`.
+ * .uttv-hidden: A secondary/legacy hiding class. It's good practice to consolidate
+ * to using only .uttv-hidden-item, but this is kept for compatibility with any
+ * existing logic (e.g., in popup.js or blacklist.js).
  */
 .uttv-hidden {
 	display: none !important;
 }
 
-.uttv-caption {
-	font-size: 1.2rem;
-	line-height: 1.5;
-	padding-left: 0.5rem;
-	padding-top: 1rem;
+
+/* ==========================================================================
+   Management Button (Injected at the top of directory pages)
+   ========================================================================== */
+
+/*
+ * This container is injected by the addManagementButton() function in directory.js.
+ * It provides a stable anchor for positioning the button.
+ */
+.uttv-management-container {
+    text-align: right;
+    margin-bottom: 1rem; /* Provide some space below the button */
 }
 
 .uttv-button {
 	background-color: rgba(0, 0, 0, 0.05);
 	background-clip: padding-box;
+    /* The original base64 icon is kept for consistency. */
 	background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAB3RJTUUH4ggDFiYvxTmVuQAAAAlwSFlzAAALEgAACxIB0t1+/AAAAARnQU1BAACxjwv8YQUAAAJFSURBVHjaY1AXd9NOtF/4Nd151X98ONVp+f9kh8X/GNCBi3ZxWbLDkl9+Rs2zvQ3qJ/oY1E9Cx976tb2RllPPgAzBMCDBbt7rJPtFXwXYlbgZ8AAP3cpmkEswJFIcl/0HGSDJayAC4gtzqvEZy0e6gtjygpYy+jJBViC2p151Bw4DlqIYoCnhqR9nO/cZiG2rlhEXYTHpEIkGeOjF2cx+CDZANT0m3GLCPpIMUBV1Ugszn7AHxDZXivcNMG6dDw2DlnTn1YQNAAEmBjZGEM3MwMAIFVLP5pZ4t5yT6X8JE8NxIF8DLg814IsIpzofttDnAVq+hYv15yt2hv/vORj+P2Nh+L+FneGDBFAc4gKHpcAEsuRvhOXkI0B8VFfa38RaJTUCxHfUyj61g53172dGhv9vmZj+v2Vg+P8GiF8C8QZO5i9A7SYMQM3/Qa4AJZI0pxX/g0y71gDF/oD4xTzS/18CNT9jZv7/FKjpVULC/z8vXvx/W1v7/yaQn8nEcA3sBVBagGCQQSv+pzouB+OFDIz/nwJtvguytbv7//+/f///ePz4/6PAwP+3gGI9DAz/GLQkvAw0xN11gM6OAtkKTAOPDeXCHEDilQyMl+4BFT7u6voPAu+PH/9/HcgH4YtAgzMYGM7CAwtkCMgLlspJwUhhqLGdgeHdbWvr//cnTvx/DqjxPBBfAeLlQHFQ7DAQAlIMDNZrGBienwFqAlr3/yQQL2BgeCbIwGBJUDNSOhALYWBYUcHAcD+AgWEZkC8CSS8MjAAp/SWxILJBIQAAAABJRU5ErkJggg==');
 	background-position: 6px center;
 	background-repeat: no-repeat;
 	border: 1px solid rgba(0, 0, 0, 0.05);
-	border-radius: 9000px;
+	border-radius: 4px; /* Slightly more modern rounded corners */
 	color: #322F37;
 	display: inline-flex;
 	font-size: 1.2rem;
 	font-weight: 600;
 	height: 3rem;
-	margin: 0.5rem;
+	margin: 0 0.5rem;
 	outline: none;
 	padding: 0.75em 0.5rem;
 	user-select: none;
 	white-space: nowrap;
+    vertical-align: middle;
 }
 	.uttv-button:hover {
 		background-color: rgba(0, 0, 0, 0.10);
@@ -75,9 +66,8 @@
 	.uttv-button .uttv-manage {
 		align-self: center;
 		cursor: pointer;
-		padding-bottom: 6px;
-		padding-top: 6px;
 		display: flex;
+		padding: 6px 0;
 		padding-left: 20px;
 	}
 		.uttv-button .uttv-manage:hover {
@@ -87,8 +77,7 @@
 	.uttv-button .uttv-toggle {
 		align-self: center;
 		cursor: pointer;
-		padding-bottom: 3px;
-		padding-top: 3px;
+		padding: 3px 0;
 		font-size: 16px;
 		padding-left: 0.5rem;
 	}
@@ -96,77 +85,107 @@
 			color: #9147FF;
 		}
 
-	.uttv-frontpage {
-		margin-top: 2rem;
-		position: relative;
-		text-align: center;
-		z-index: 1;
-	}
+/* ==========================================================================
+   Hide Buttons (on Stream/Category Cards and Tags)
+   ========================================================================== */
 
-	.uttv-collection,
-	.uttv-explore {
-		text-align: right;
-	}
-
-	.uttv-videos .uttv-button,
-	.uttv-clips .uttv-button {
-		margin: 0;
-	}
-
+/*
+ * Hide button on stream/category cards.
+ * IMPORTANT: The JavaScript in directory.js MUST add `position: relative;`
+ * to the stream/category card's container element for this to work correctly.
+ */
 .uttv-hide-item {
-	background-color: #00000099;
+	background-color: rgba(0, 0, 0, 0.6); /* Slightly more subtle background */
 	border-radius: 9000px;
 	color: #FFFFFF;
 	cursor: pointer;
-	font-size: 90%;
-	right: 10px;
-	padding: 2px 12px;
+	font-size: 14px; /* Larger font for better visibility */
+    line-height: 20px;
+    width: 20px;
+    height: 20px;
+    text-align: center;
+	right: 8px; /* Standardized positioning */
+	padding: 0;
 	position: absolute;
-	top: 10px;
+	top: 8px;
 	user-select: none;
-	z-index: 999; /* stay on top of Twitch badges */
+	z-index: 1001; /* High z-index to stay on top of Twitch badges */
+    transition: background-color 0.15s ease-in-out;
 }
-	.uttv-hide-item.uttv-ffz {
-		top: 34px;
-	}
 	.uttv-hide-item:hover {
 		background-color: #9147FF;
 		color: #FFFFFF;
 	}
 
+    /* FFZ Compatibility: Adjust position if FFZ elements are present */
+	.uttv-hide-item.uttv-ffz {
+		top: 34px;
+	}
+
+/*
+ * Hide button for individual tags.
+ * IMPORTANT: The JavaScript must append this inside the tag's <button> element,
+ * and that button MUST have `position: relative;` for this to be positioned correctly.
+ */
 .uttv-hide-tag {
-	border-radius: 9000px;
+    position: absolute; /* Position relative to the parent tag button */
+    top: -5px;
+    right: -5px;
+	background-color: rgba(0, 0, 0, 0.7);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 50%; /* Circular button */
+	color: #FFFFFF;
 	cursor: pointer;
-	display: inline-block;
-	font-size: 90%;
-	padding: 0px 6px;
-	margin-left: 0.3rem;
+	font-size: 12px;
+    font-weight: bold;
+    width: 16px;
+    height: 16px;
+    line-height: 15px;
+    text-align: center;
 	user-select: none;
+    z-index: 1002; /* Even higher to be on top of the card 'X' if they overlap */
+    transition: background-color 0.15s ease-in-out, transform 0.1s ease-in-out;
 }
 	.uttv-hide-tag:hover {
 		background-color: #9147FF;
 		color: #FFFFFF;
-	}
-	.uttv-hide-tag.firefox {
-		display: block;
-		margin-left: 0px;
-		text-align: center;
+        transform: scale(1.1);
 	}
 
-/* BEGIN: dark theme */
 
-	html.tw-root--theme-dark .uttv-button {
-		background-color: rgba(255, 255, 255, 0.15);
-		border-color: rgba(255, 255, 255, 0.15);
-		color: rgba(255, 255, 255, 0.7);
-	}
-		html.tw-root--theme-dark .uttv-button:hover {
-			background-color: rgba(255, 255, 255, 0.30);
-			border-color: rgba(255, 255, 255, 0.30);
-		}
+/* ==========================================================================
+   Dark Theme Overrides
+   ========================================================================== */
 
-	html.tw-root--theme-dark .uttv-hide-tag {
-		border-color: rgba(255, 255, 255, 0.15);
-	}
+html.tw-root--theme-dark .uttv-button {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.8); /* Slightly brighter text */
+}
+    html.tw-root--theme-dark .uttv-button:hover {
+        background-color: rgba(255, 255, 255, 0.30);
+        border-color: rgba(255, 255, 255, 0.30);
+    }
+    html.tw-root--theme-dark .uttv-button .uttv-manage:hover,
+    html.tw-root--theme-dark .uttv-button .uttv-toggle:hover {
+        color: #a970ff; /* Brighter purple for dark mode hover */
+    }
 
-/* END: dark theme */
+html.tw-root--theme-dark .uttv-hide-item {
+    background-color: rgba(0, 0, 0, 0.7);
+    color: #e0e0e0; /* Off-white for better contrast */
+}
+    html.tw-root--theme-dark .uttv-hide-item:hover {
+        background-color: #a970ff;
+        color: #FFFFFF;
+    }
+
+html.tw-root--theme-dark .uttv-hide-tag {
+    background-color: rgba(10, 10, 10, 0.8);
+	border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #e0e0e0;
+}
+    html.tw-root--theme-dark .uttv-hide-tag:hover {
+        background-color: #a970ff;
+		color: #FFFFFF;
+    }

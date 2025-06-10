@@ -85,8 +85,6 @@ async function initExtensionState() {
     hideReruns = result.hideReruns ?? false;
 }
 
-
-
 // Utility to wait for an element to appear in the DOM, crucial for single-page apps
 function waitForElement(selector, timeout = 10000) {
     return new Promise((resolve) => {
@@ -175,16 +173,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // Required for asynchronous sendResponse
 });
 
-
-// --- NEW HELPER FUNCTION (Add this near the top of the file) ---
-function getCategoryFromPage() {
-    const pathParts = window.location.pathname.split('/');
-    // For URLs like /directory/category/retro
-    if (pathParts[1] === 'directory' && pathParts[2] === 'category' && pathParts[3]) {
-        return pathParts[3];
-    }
-    return ''; // Return empty if not on a category page
-}
 
 /* ==========================================================================
    Page State & Content Monitoring
@@ -312,88 +300,24 @@ function filterItems(items, hideClass) {
    DOM Selectors & Parsing (MOST CRITICAL FIXES ARE HERE)
    ========================================================================== */
 
-/*
-// --- WORKING, Only for individual Category Pages though ---
+// --- UPDATED SELECTOR ---
+// This selector is more robust for finding both stream and category cards.
 function getDirectoryItemNodes(mode) {
     if (!mainContentNode) return [];
     const suffix = mode === 'unprocessed' ? ':not([data-uttv-processed])' : '';
-    // This selector is much better. It finds direct children of the tower
-    // that contain a link whose href starts with a forward slash (i.e., a channel link).
-    // This effectively ignores the placeholder divs which have no links.
-    const selector = `div.tw-tower > div:has(a[href^="/"])${suffix}`;
+    const selector = `div.tw-tower > div${suffix}`; // Target direct children of the main content grid
     return mainContentNode.querySelectorAll(selector);
 }
-*/
 
-// --- TESTING NEW, CONTEXT-AWARE CODE (Handles both page types) ---
-function getDirectoryItemNodes(mode) {
-    if (!mainContentNode) return [];
+// --- UPDATED SELECTOR ---
+function getSidebarItemNodes(mode) {
+    const sidebarNode = document.querySelector('nav#side-nav');
+    if (!sidebarNode) return [];
     const suffix = mode === 'unprocessed' ? ':not([data-uttv-processed])' : '';
-    let selector = '';
-
-    if (currentPageType === 'categories') {
-        // On the main /directory page, each category is a '.game-card'.
-        // This is a much more stable selector.
-        selector = `.game-card${suffix}`;
-    } else { // Assumes 'channels' page
-        // On a /directory/category/... page, each item is a direct child of the tower.
-        selector = `div.tw-tower > div:has(a[href^="/"])${suffix}`;
-    }
-
-    return mainContentNode.querySelectorAll(selector);
+    // This targets the container of a followed channel in the sidebar
+    const selector = `.side-nav-card${suffix}`;
+    return sidebarNode.querySelectorAll(selector);
 }
-
-
-/*
-// --- UPDATE getDirectoryItems to use the new function ---
-// The old getDirectoryItems called readItem, which is now gone. We just need to make sure it calls our new readChannel function.
-function getDirectoryItems(mode) {
-    const nodes = getDirectoryItemNodes(mode);
-    const items = [];
-    for (const node of nodes) {
-        // Call our new, consolidated parsing function
-        const item = readChannel(node);
-        if (item) items.push(item);
-    }
-    if (nodes.length > 0 && items.length === 0) {
-        logWarn("Found directory nodes but could not read any valid items from them.", nodes);
-    }
-    return items;
-}
-*/
-
-// --- NEW, CONTEXT-AWARE CODE ---
-//Now we update the getDirectoryItems function to act as a "router." Based on the page type, it will call the correct parsing function (readChannel or our new readCategoryCard).
-
-function getDirectoryItems(mode) {
-    const nodes = getDirectoryItemNodes(mode);
-    const items = [];
-    for (const node of nodes) {
-        let item = null;
-        // Use the page type to decide which parser to use
-        if (currentPageType === 'categories') {
-            item = readCategoryCard(node);
-        } else { // Default to the channel parser for other supported pages
-            item = readChannel(node);
-        }
-
-        if (item) {
-            items.push(item);
-        }
-    }
-
-    if (nodes.length > 0 && items.length === 0) {
-        // Added currentPageType to the log for better debugging
-        logWarn(`Found ${nodes.length} nodes on a '${currentPageType}' page but could not read any valid items from them.`, nodes);
-    }
-    return items;
-}
-
-
-
-
-
-
 
 // Determines if a node is a stream or category card and calls the correct parser
 function readItem(containerNode) {
@@ -411,91 +335,45 @@ function readItem(containerNode) {
     return null; // It's something else (e.g., a VOD, which we ignore)
 }
 
+function getDirectoryItems(mode) {
+    const nodes = getDirectoryItemNodes(mode);
+    const items = [];
+    for (const node of nodes) {
+        const item = readItem(node);
+        if (item) items.push(item);
+    }
+    if (nodes.length > 0 && items.length === 0) {
+        logWarn("Found directory nodes but could not read any valid items from them.", nodes);
+    }
+    return items;
+}
 
-
-// ---WORKING, but not for all -  REPLACEMENT FOR readItem and readChannel --- MON AM
+// --- UPDATED PARSING LOGIC ---
 function readChannel(containerNode) {
-    // The most stable anchor is the link to the channel itself.
-    // If it doesn't exist, this is not a valid stream card.
-    const linkNode = containerNode.querySelector('a.tw-link[href]');
-    if (!linkNode || !linkNode.href) return null;
+    // Find key elements within the card
+    const linkNode = containerNode.querySelector('a[data-a-target="preview-card-image-link"]');
+    if (!linkNode) return null;
 
-    // --- Channel Name (Robust) ---
-    // Extract the name directly from the URL. e.g., "/macaw45" -> "macaw45"
-    const name = linkNode.href.split('/').pop();
+    const titleNode = containerNode.querySelector('a[data-a-target="preview-card-title-link"] > h3');
+    const nameNode = containerNode.querySelector('a[data-a-target="tw-card-avatar-link"]');
+    const categoryNode = containerNode.querySelector('a[data-a-target="preview-card-game-link"]');
+    const tagContainer = containerNode.querySelector('div[data-a-target="preview-card-tags"]');
+
+    const name = nameNode?.getAttribute('href')?.substring(1) ?? ''; // Get name from the user's link href
     if (!name) return null;
-
-    // --- Stream Title (Moderately Robust) ---
-    // Twitch uses a <p> tag with a `title` attribute for the full stream title.
-    // We find the element that contains the preview card information.
-    const cardInfo = containerNode.querySelector('.switcher-preview-card__wrapper');
-    if (!cardInfo) return null;
-
-    // Find the title element within that card info section.
-    // The class 'jSUoJW' is an example from the provided HTML, using a partial match is safer.
-    const titleNode = cardInfo.querySelector('p[class*="CoreText"][title]');
-    const title = titleNode ? titleNode.title.trim() : '';
-
-    // --- Tags (Robust) ---
-    const tagNodes = cardInfo.querySelectorAll('button.tw-tag[data-a-target]');
-    const tags = [];
-    tagNodes.forEach(tagNode => {
-        const tagName = tagNode.textContent.trim();
-        if (tagName) tags.push({ name: tagName, node: tagNode });
-    });
-
-    // --- Rerun Status (Robust) ---
-    // Check for the "LIVE" indicator. If it exists, it's not a rerun.
-    const liveIndicator = cardInfo.querySelector('.tw-channel-status-text-indicator');
-    const isRerun = !liveIndicator; // If there's no "LIVE" indicator, treat as rerun/VOD
 
     return {
         type: 'channels',
         name: name,
-        // The category is now the same for the whole page, so we get it once.
-        category: getCategoryFromPage(),
-        title: title,
-        tags: tags,
-        rerun: isRerun,
+        category: categoryNode?.textContent?.trim() ?? '',
+        title: titleNode?.textContent?.trim() ?? '',
+        tags: readTags(tagContainer),
+        rerun: !!containerNode.querySelector('[aria-label*="Rerun"], [data-a-target="stream-rerun-indicator"]'),
         containerNode: containerNode
     };
 }
 
-// --- NEW FUNCTION --- Since the structure of a category card is different, we need a new function specifically to parse it. We'll name it readCategoryCard. MON AM
-
-function readCategoryCard(containerNode) {
-    // The most reliable element for the name is the h2 tag with a title attribute.
-    const nameNode = containerNode.querySelector('h2[title]');
-    if (!nameNode) return null;
-
-    const name = nameNode.getAttribute('title').trim();
-    if (!name) return null;
-
-    // Tags are in button elements with the 'tw-tag' class.
-    const tagNodes = containerNode.querySelectorAll('button.tw-tag');
-    const tags = [];
-    tagNodes.forEach(tagNode => {
-        const tagName = tagNode.textContent.trim();
-        if (tagName) tags.push({ name: tagName, node: tagNode });
-    });
-
-    return {
-        type: 'categories', // This is crucial for the blacklist logic
-        name: name,
-        category: name, // For a category card, its name is the category
-        title: '',      // Not applicable on this card type
-        tags: tags,
-        rerun: false,   // Not applicable on this card type
-        containerNode: containerNode
-    };
-}
-
-
-/*
-MARKED FOR DELETION
-     now completely obsolete? and incorrect. It should be removed to avoid confusion.
-
-// --- UPDATED PARSING LOGIC For Directory and Game pages (Compare against function readCategoryCard(containerNode) later) --- Mon AM
+// --- UPDATED PARSING LOGIC ---
 function readCategory(containerNode) {
     const linkNode = containerNode.querySelector('a[data-a-target="tw-box-art-card-link"]');
     if (!linkNode) return null;
@@ -516,64 +394,25 @@ function readCategory(containerNode) {
         containerNode: containerNode
     };
 }
-*/
 
-
-/*  
-// Broken
-//function getSidebarItems(mode) {
-	//    const nodes = getSidebarItemNodes(mode);
-	//    const items = [];
-	//    for (const node of nodes) {
-	//        const nameNode = node.querySelector('a[data-a-target="side-nav-card-link"]');
-	//        const categoryNode = node.querySelector('a[data-a-target="side-nav-game-link"]');
-	//
-	//        const name = nameNode?.href.split('/').pop() ?? '';
-	//        if (!name) continue;
-	//
-	//        items.push({
-	//            type: 'channels',
-	//            name: name,
-	//            category: categoryNode?.textContent?.trim() ?? '',
-	//            tags: [],
-	//            title: '',
-	//            rerun: false,
-	//            containerNode: node
-	//        });
-	//    }
-	//    return items;
-	//}
-*/
-
-// --- NEW, ROBUST CODE ---
-function getSidebarItemNodes(mode) {
-    const sidebarNode = document.querySelector('nav#side-nav');
-    if (!sidebarNode) return [];
-    const suffix = mode === 'unprocessed' ? ':not([data-uttv-processed])' : '';
-    // The container for a followed channel is now an `a` tag with this class.
-    const selector = `a.side-nav-card${suffix}`;
-    return sidebarNode.querySelectorAll(selector);
-}
-
-// --- Working - Updated selectors -needs verification
+// --- UPDATED PARSING LOGIC ---
 function getSidebarItems(mode) {
     const nodes = getSidebarItemNodes(mode);
     const items = [];
     for (const node of nodes) {
-        // The node itself is the link container
-        const name = node.href?.split('/').pop() ?? '';
-        if (!name) continue;
+        const nameNode = node.querySelector('a[data-a-target="side-nav-card-link"]');
+        const categoryNode = node.querySelector('a[data-a-target="side-nav-game-link"]');
 
-        // The category is in a <p> tag inside the link now
-        const categoryNode = node.querySelector('p[data-a-target="side-nav-game-title"]');
+        const name = nameNode?.href.split('/').pop() ?? '';
+        if (!name) continue;
 
         items.push({
             type: 'channels',
             name: name,
             category: categoryNode?.textContent?.trim() ?? '',
-            tags: [], // Tags are not displayed in the collapsed sidebar view
-            title: '', // Title is not displayed in the collapsed sidebar view
-            rerun: false, // Rerun status is not shown in sidebar
+            tags: [],
+            title: '',
+            rerun: false,
             containerNode: node
         });
     }

@@ -13,14 +13,12 @@
 	"background": {
 		"service_worker": "scripts/background.js"
 	},
-
-
-
 	"content_scripts": [
 		{
 			"matches": [
 				"https://www.twitch.tv/*"
 			],
+			"run_at": "document_start",
 			"js": [
 				"scripts/common.js",
 				"scripts/storage.js",
@@ -31,7 +29,6 @@
 			]
 		}
 	],
-
 	"action": {
 		"default_icon": "images/icon32.png",
 		"default_popup": "views/popup.html"

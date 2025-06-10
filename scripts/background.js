@@ -27,7 +27,7 @@ function logError(...args) {
     console.error('UTTV BG ERROR:', ...args);
 }
 function logVerbose(...args) {
-     // console.log('UTTV BG VERBOSE:', ...args); // Uncomment for detailed debugging
+     console.log('UTTV BG VERBOSE:', ...args); // Uncomment for detailed debugging
 }
 
 
