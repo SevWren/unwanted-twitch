@@ -33,7 +33,16 @@
     <script src="blacklist_logic_test.js"></script>
     <script src="directory_parsing_test.js"></script>
     <script src="directory_filter_test.js"></script>
-    <script src="directory_ui_state_test.js"></script> <!-- Add directory_ui_state_test.js -->
+    <script src="directory_ui_state_test.js"></script>
+
+    <div id="live-console-container">
+        <button id="toggle-live-console">Toggle Live Console View</button>
+        <button id="clear-live-console" style="margin-left: 10px;">Clear Live Console</button>
+        <div id="live-console-output" style="display: none; max-height: 300px; overflow-y: auto; border: 1px solid #ccc; padding: 5px; margin-top: 5px; background-color: #f9f9f9;">
+            <p><em>Live console output will appear here...</em></p>
+        </div>
+    </div>
+    <hr>
 
     <script>
         // Simple test reporting
@@ -49,7 +58,136 @@
             }
             resultsDiv.appendChild(resultP);
         }
-        console.log("Test runner loaded. Individual test files should execute their tests.");
+        // This console.log will be captured by the override below if everything loads in order.
+        // However, since the override script is at the very end, this specific log might only go to the browser console.
+        // For testing the live console itself, messages logged *after* the override script is active are key.
+        console.log("Test runner reporting logic loaded. Test files above should have executed.");
+    </script>
+
+    <script>
+    // Live Console Override Logic
+    (function() {
+        const consoleOutputDiv = document.getElementById('live-console-output');
+        const toggleButton = document.getElementById('toggle-live-console');
+        let consoleInitialized = false; // To clear initial message
+
+        // Store original console methods
+        const originalConsole = {
+            log: console.log.bind(console),
+            warn: console.warn.bind(console),
+            error: console.error.bind(console),
+            info: console.info.bind(console),
+            debug: console.debug.bind(console),
+            trace: console.trace.bind(console),
+        };
+
+        function formatArgs(args) {
+            return args.map(arg => {
+                if (typeof arg === 'object' && arg !== null) {
+                    if (arg instanceof Node && arg.outerHTML) { // Basic check for DOM elements
+                        return arg.outerHTML; // Show outer HTML for DOM elements
+                    }
+                    try {
+                        // Simple circular reference replacer
+                        const getCircularReplacer = () => {
+                            const seen = new WeakSet();
+                            return (key, value) => {
+                                if (typeof value === "object" && value !== null) {
+                                    if (seen.has(value)) {
+                                        return "[Circular]";
+                                    }
+                                    seen.add(value);
+                                }
+                                return value;
+                            };
+                        };
+                        return JSON.stringify(arg, getCircularReplacer(), 2); // Pretty print with 2 spaces
+                    } catch (e) {
+                        // Fallback for other complex types or errors during stringification
+                        if (typeof arg.toString === 'function') {
+                            const str = arg.toString();
+                            return str === '[object Object]' ? '{...}' : str; // Avoid generic [object Object]
+                        }
+                        return "[Unserializable Object]";
+                    }
+                } else if (typeof arg === 'symbol') {
+                    return arg.toString();
+                }
+                return String(arg); // For primitives, null, undefined
+            }).join(' ');
+        }
+
+        function addToLiveConsole(message, level) {
+            if (!consoleOutputDiv) return; // Guard if somehow div is not found
+            if (!consoleInitialized) {
+                consoleOutputDiv.innerHTML = ''; // Clear "Live console output will appear here..."
+                consoleInitialized = true;
+            }
+            const p = document.createElement('p');
+            const now = new Date();
+            const timestamp = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}.${now.getMilliseconds().toString().padStart(3, '0')}`;
+
+            const displayMessage = message.trim() === '' ? `<em>(${level} message, no content)</em>` : message;
+            // Using innerHTML to allow the <em> tag for empty messages
+            p.innerHTML = `<span class="console-timestamp">[${timestamp}]</span> <span class="console-level-prefix">[${level.toUpperCase()}]</span> ${displayMessage}`;
+            p.className = `console-msg console-${level}`;
+            consoleOutputDiv.appendChild(p);
+            // Auto-scroll to the bottom
+            consoleOutputDiv.scrollTop = consoleOutputDiv.scrollHeight;
+        }
+
+        console.log = function(...args) {
+            originalConsole.log(...args); // Call original console
+            addToLiveConsole(formatArgs(Array.from(args)), 'log');
+        };
+        console.warn = function(...args) {
+            originalConsole.warn(...args);
+            addToLiveConsole(formatArgs(Array.from(args)), 'warn');
+        };
+        console.error = function(...args) {
+            originalConsole.error(...args);
+            addToLiveConsole(formatArgs(Array.from(args)), 'error');
+        };
+        console.info = function(...args) {
+            originalConsole.info(...args);
+            addToLiveConsole(formatArgs(Array.from(args)), 'info');
+        };
+        console.debug = function(...args) {
+            originalConsole.debug(...args);
+            addToLiveConsole(formatArgs(Array.from(args)), 'debug');
+        };
+        console.trace = function(...args) {
+            originalConsole.trace(...args);
+            addToLiveConsole("Trace: " + formatArgs(Array.from(args)), 'trace');
+        };
+
+        // Toggle button functionality
+        if (toggleButton && consoleOutputDiv) {
+            toggleButton.addEventListener('click', () => {
+                const isHidden = consoleOutputDiv.style.display === 'none';
+                consoleOutputDiv.style.display = isHidden ? 'block' : 'none';
+                // Log this action to the *original* console to avoid feedback loop if live console is hidden
+                originalConsole.log(`Live console view toggled ${isHidden ? 'on' : 'off'}.`);
+            });
+        }
+
+        const clearButton = document.getElementById('clear-live-console');
+        if (clearButton && consoleOutputDiv) { // Ensure consoleOutputDiv is also available
+            clearButton.addEventListener('click', () => {
+                consoleOutputDiv.innerHTML = ''; // Clear the content
+                // Optionally, add back a placeholder or log that it was cleared
+                const p = document.createElement('p');
+                p.innerHTML = '<em>Live console cleared.</em>';
+                p.className = 'console-msg console-info'; // Style it as an info message
+                consoleOutputDiv.appendChild(p);
+                originalConsole.log("Live console cleared by user."); // Log to actual console
+            });
+        }
+
+        // Initial message to indicate override is active
+        // This will be one of the first messages in the live console.
+        console.log("Live console override active. Messages will also appear here.");
+    })();
     </script>
 </body>
 </html>

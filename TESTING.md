@@ -28,6 +28,25 @@ It's pretty easy! Just follow these steps:
     *   In most browsers (like Chrome or Firefox), you can open the Developer Console by pressing the **F12** key. (You can also usually find it in the browser's menus, often under "More Tools" or "Developer Tools").
     *   The console will show more detailed messages from the tests. If a test FAILED, the console will often have error messages that give clues about what went wrong. It will also show lots of informational messages about what the tests were doing.
 
+### Using the Built-in Live Console Viewer
+
+The `test_runner.html` page now includes its own mini 'console viewer' right on the page!
+
+*   **What it does:** It shows many of the same messages that would normally only appear if you opened your browser's special 'Developer Console' (the F12 tool). This can make it quicker to see what the tests are doing or why something might have failed.
+*   **How to see it:**
+    1.  When you open `test_runner.html`, you'll see a button near the top that says **'Toggle Live Console View'**.
+    2.  Click this button to show (expand) or hide (collapse) the live console window on the page.
+    3.  Messages from the tests (like informational logs, warnings, or errors) will appear in this window as they happen.
+*   **Features of the Live Console:**
+    *   **Timestamps:** Each message has a timestamp (like `[10:30:15.123]`) so you know when it happened.
+    *   **Levels:** Messages are marked with their type, like `[LOG]`, `[WARN]`, `[ERROR]`, and have different colors to help you spot important ones.
+    *   **Auto-Scroll:** The window usually scrolls down automatically as new messages appear.
+    *   **Clear Button:** There's a **'Clear Live Console'** button next to the toggle button. Click this to wipe all messages from the live console window (it doesn't clear the browser's real Developer Console).
+*   **Still Use the Browser's Developer Console (F12)!**
+    *   This built-in live console is helpful, but the browser's own Developer Console (usually opened by pressing F12) is much more powerful.
+    *   The browser's console is better for looking at complex data, seeing detailed error information (like exactly which line of code caused a problem), and other advanced things.
+    *   **Good practice:** Use the live console for a quick look, but if a test fails or you need more detail, always open and check the browser's Developer Console too!
+
 ## What Each Test File Checks
 
 This section will break down what each test file (`something_test.js`) is trying to "quiz" our main code about.
@@ -267,3 +286,5 @@ This section will break down what each test file (`something_test.js`) is trying
     *   Saving and Loading Your Blacklist (interactions with `putBlacklistedItems`, `getBlacklistedItems`, `modifyBlacklistedItems`): "These tests verify that this main script correctly uses the 'librarian' (`storage.js`) and 'common helpers' (`common.js`) to load your blacklist when it starts, update it in its memory if you use an 'X' button, and save it if needed."
         *   **PASSED:** "Your blacklist is handled correctly by the main filtering script."
         *   **FAILED:** "The main script might use an outdated blacklist, or changes made via 'X' buttons might not be remembered correctly."
+
+[end of TESTING.md]
