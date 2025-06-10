@@ -11,3 +11,11 @@ Created `tests/directory_parsing_test.js` for `directory.js`, focusing on DOM pa
 Created `tests/directory_filter_test.js` for `directory.js`, covering core item blacklisting and content filtering logic. Updated `test_runner.html`.
 Created `tests/directory_ui_state_test.js` for `directory.js`, covering UI controls, state management, event handling, and communication. Updated `test_runner.html`.
 Reviewed all test files, `test_runner.html`, and `mocks.js`. Verified `jules_log.txt`. Created `TESTING.md` with instructions on how to run the manual tests.
+Revised `TESTING.MD` with simplified language and instructions for easier understanding, targeting a high school student level. Applied 'Keep it simple stupid' principle.
+Started revising `TESTING.MD` with extreme detail. Added general 'How to Run' section and detailed explanation for `common_test.js`.
+Added detailed explanation for `storage_test.js` to `TESTING.MD`.
+Added detailed explanation for `background_test.js` to `TESTING.MD`.
+Added detailed explanation for `popup_test.js` to `TESTING.MD`.
+Added detailed explanation for `blacklist_dom_test.js` and `blacklist_logic_test.js` (covering `blacklist.js`) to `TESTING.MD`.
+Added detailed explanation for `directory_parsing_test.js`, `directory_filter_test.js`, and `directory_ui_state_test.js` (covering `directory.js`) to `TESTING.MD`.
+Completed final review of `TESTING.MD`. Ensured comprehensive detail, simple language, and clarity of all sections, including general guide and specific test suite explanations.
