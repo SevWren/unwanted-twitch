@@ -1,0 +1,13 @@
+Manual testing environment setup initiated due to Jest installation issues.
+Developed initial `test_runner.html`, `test_styles.css`, and `mocks.js`.
+Created `tests` directory.
+Created `tests/common_test.js` with tests for utility, term matching, storage wrappers, and logging functions. Updated `test_runner.html`.
+Created `tests/storage_test.js` with tests for fragmenting, merging, and size measurement of blacklist items. Updated `test_runner.html`.
+Created `tests/background_test.js` with tests for URL redirection, tab updates, message handling, and initial icon states. Updated `test_runner.html` and potentially refined `mocks.js`.
+Created `tests/popup_test.js` with tests for popup actions, state handling, event listeners, and UI initialization. Updated `test_runner.html`.
+Created `tests/blacklist_dom_test.js` focusing on DOM manipulation and basic UI interactions for `blacklist.js`. Updated `test_runner.html`.
+Created `tests/blacklist_logic_test.js` for `blacklist.js`, covering data gathering, save/cancel, import/export, and loading functions. Updated `test_runner.html`.
+Created `tests/directory_parsing_test.js` for `directory.js`, focusing on DOM parsing, item identification, and page type helpers. Updated `test_runner.html`.
+Created `tests/directory_filter_test.js` for `directory.js`, covering core item blacklisting and content filtering logic. Updated `test_runner.html`.
+Created `tests/directory_ui_state_test.js` for `directory.js`, covering UI controls, state management, event handling, and communication. Updated `test_runner.html`.
+Reviewed all test files, `test_runner.html`, and `mocks.js`. Verified `jules_log.txt`. Created `TESTING.md` with instructions on how to run the manual tests.

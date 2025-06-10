@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unwanted Twitch Test Runner</title>
+    <link rel="stylesheet" href="test_styles.css">
+</head>
+<body>
+    <h1>Unwanted Twitch Test Suite</h1>
+    <div id="test-results">
+        <!-- Test results will be appended here -->
+    </div>
+
+    <!-- Mocks FIRST -->
+    <script src="mocks.js"></script>
+
+    <!-- Source Files (Order might be important due to dependencies) -->
+    <script src="../scripts/common.js"></script>
+    <script src="../scripts/storage.js"></script>
+    <script src="../scripts/background.js"></script>
+    <script src="../scripts/popup.js"></script>
+    <script src="../scripts/blacklist.js"></script>
+    <script src="../scripts/directory.js"></script>
+    <!-- Add other source files as needed by tests -->
+
+    <!-- Test Files -->
+    <script src="common_test.js"></script>
+    <script src="storage_test.js"></script>
+    <script src="background_test.js"></script>
+    <script src="popup_test.js"></script>
+    <script src="blacklist_dom_test.js"></script>
+    <script src="blacklist_logic_test.js"></script>
+    <script src="directory_parsing_test.js"></script>
+    <script src="directory_filter_test.js"></script>
+    <script src="directory_ui_state_test.js"></script> <!-- Add directory_ui_state_test.js -->
+
+    <script>
+        // Simple test reporting
+        function reportTestResult(testName, success, error) {
+            const resultsDiv = document.getElementById('test-results');
+            const resultP = document.createElement('p');
+            resultP.textContent = testName + ": " + (success ? "PASSED" : "FAILED");
+            resultP.className = success ? "passed" : "failed";
+            if (!success && error) {
+                const errorDetails = document.createElement('pre');
+                errorDetails.textContent = "    " + (error.stack || error);
+                resultP.appendChild(errorDetails);
+            }
+            resultsDiv.appendChild(resultP);
+        }
+        console.log("Test runner loaded. Individual test files should execute their tests.");
+    </script>
+</body>
+</html>
