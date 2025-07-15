@@ -1,4 +1,17 @@
-﻿// jshint esversion: 6
+﻿/**
+ * @file This script serves as the background worker for the "Unwanted Twitch" extension.
+ * @description It handles several key functionalities:
+ * 1.  **URL Redirection**: It automatically changes the sorting of Twitch directory pages from the default "Relevance" to "Viewer Count (High to Low)". This is the core feature of the extension. It specifically targets directory pages while excluding certain paths like 'following', 'videos', and 'clips'.
+ * 2.  **Browser Action (Icon) Management**: It enables the extension's icon in the browser toolbar only when the user is on a Twitch.tv tab and disables it otherwise, providing a clear visual cue of when the extension is active.
+ * 3.  **Message Handling**: It listens for messages from other parts of the extension (like popup scripts) to perform actions, such as opening the blacklist page. It also acts as a message-passing hub, forwarding relevant messages to content scripts running on Twitch tabs.
+ * 4.  **Initialization**: On startup, it correctly sets the initial state of the browser action icon for all existing tabs.
+ *
+ * This script is designed to be persistent (within the constraints of Manifest V3 service workers) and operates without direct user interaction for its primary redirection and icon management tasks.
+ * @author Unwanted Twitch
+ * @license MIT
+ * @version 1.0.0
+ */
+// jshint esversion: 6
 
 const twitchUrl = 'https://www.twitch.tv/';
 
@@ -17,21 +30,45 @@ const RELEVANCE_VALUE = 'RELEVANCE';
 const VIEWER_COUNT_VALUE = 'VIEWER_COUNT';
 
 // --- Helper logging functions ---
+/**
+ * Logs informational messages to the console with a consistent prefix.
+ * @param {...*} args - The arguments to log.
+ */
 function logInfo(...args) {
     console.log('UTTV BG INFO:', ...args);
 }
+/**
+ * Logs warning messages to the console with a consistent prefix.
+ * @param {...*} args - The arguments to log.
+ */
 function logWarn(...args) {
     console.warn('UTTV BG WARN:', ...args);
 }
+/**
+ * Logs error messages to the console with a consistent prefix.
+ * @param {...*} args - The arguments to log.
+ */
 function logError(...args) {
     console.error('UTTV BG ERROR:', ...args);
 }
+/**
+ * Logs verbose (debugging) messages to the console. Can be commented out in production.
+ * @param {...*} args - The arguments to log.
+ */
 function logVerbose(...args) {
      console.log('UTTV BG VERBOSE:', ...args); // Uncomment for detailed debugging
 }
 
 
-// --- Function to handle URL redirection ---
+/**
+ * Analyzes a URL and redirects if it's a Twitch directory page that needs its sorting parameter changed.
+ * It checks if the URL is a main directory page (and not an excluded one) and if the sort parameter
+ * is either missing or set to 'RELEVANCE'. If so, it updates the URL to sort by 'VIEWER_COUNT'
+ * and redirects the tab.
+ * @param {number} tabId - The ID of the tab to potentially redirect.
+ * @param {string} url - The URL of the tab to check.
+ * @returns {Promise<boolean>} A promise that resolves to `true` if a redirect occurred, `false` otherwise.
+ */
 async function handleUrlRedirect(tabId, url) {
     try {
         // Ensure URL is valid
@@ -105,7 +142,13 @@ async function handleUrlRedirect(tabId, url) {
 }
 
 
-// --- Combined Tab Update Listener ---
+/**
+ * Listens for updates to tabs and orchestrates actions based on the changes.
+ * This function serves two main purposes:
+ * 1.  **Icon Management**: Enables or disables the browser action icon based on whether the tab's URL is for Twitch.tv.
+ * 2.  **URL Redirection**: When a tab's URL changes, it triggers the `handleUrlRedirect` function to check if a sort-by-viewer-count redirect is needed. This check is specifically tied to the 'loading' status to ensure it acts on the new URL being navigated to.
+ * @listens chrome.tabs.onUpdated
+ */
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
     // --- 1. Icon Enabling/Disabling Logic ---
@@ -134,7 +177,15 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 
-// --- Keep existing Message Forwarding Logic ---
+/**
+ * Forwards a message to a list of specified tabs.
+ * It iterates through the tabs, ensures they are valid and have a 'complete' status,
+ * and then sends the message. It handles potential errors gracefully, such as when a tab
+ * is not ready to receive messages or has been closed.
+ * @param {object} request - The message payload to forward.
+ * @param {chrome.tabs.Tab[]} tabs - An array of tabs to forward the message to.
+ * @returns {Promise<void>} A promise that resolves when the forwarding attempt is complete.
+ */
 async function forwardMessageToTabs(request, tabs) {
     let relevantTabs = [];
     let tabsLength = tabs.length;
@@ -169,6 +220,14 @@ async function forwardMessageToTabs(request, tabs) {
     }
 }
 
+/**
+ * Listens for incoming messages from other parts of the extension.
+ * This acts as the central message router for the background script.
+ * - If the message contains a specific `action` (e.g., 'openBlacklist'), it handles it directly.
+ * - Otherwise, it assumes the message is intended for content scripts and forwards it to all active Twitch tabs using `forwardMessageToTabs`.
+ * @listens chrome.runtime.onMessage
+ * @returns {boolean} Returns `true` to indicate that the listener will respond asynchronously. This is crucial for Manifest V3 service workers.
+ */
 chrome.runtime.onMessage.addListener(async(request) => {
     logVerbose("Background received message:", request);
     // actions
@@ -192,7 +251,12 @@ chrome.runtime.onMessage.addListener(async(request) => {
     return true;
 });
 
-// --- Initial Icon State Check ---
+/**
+ * Sets the initial state of the browser action icon for all currently open tabs.
+ * It queries all tabs, enabling the icon for Twitch tabs and disabling it for all others.
+ * This ensures the UI is in the correct state when the extension is first installed or enabled.
+ * @returns {Promise<void>}
+ */
 async function setInitialIconStates() {
     try {
         const twitchTabs = await chrome.tabs.query({ url: twitchUrl + '*' });
@@ -220,6 +284,7 @@ async function setInitialIconStates() {
     }
 }
 
+// Initialize the extension's state when the script is first loaded.
 setInitialIconStates();
 
 logInfo("Unwanted Twitch Background Script Loaded and Initialized.");

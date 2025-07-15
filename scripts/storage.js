@@ -1,18 +1,49 @@
-﻿// jshint esversion: 6
+﻿/**
+ * @file This script provides utility functions for managing data in Chrome's storage,
+ * specifically handling the limitations of the `chrome.storage.sync` area.
+ * @description The `chrome.storage.sync` API has strict limits on the number of items and the total
+ * size of the data that can be stored. To work around these limitations for large blacklists,
+ * this script provides functions to split a large blacklist object into smaller "fragments"
+ * that can be stored individually, and to merge those fragments back into a single object upon retrieval.
+ * It also includes a function to measure the approximate size of an object when serialized to JSON.
+ * These utilities are crucial for allowing users to maintain large blacklists while still benefiting
+ * from the cross-device synchronization feature of `chrome.storage.sync`.
+ * @author Unwanted Twitch
+ * @license MIT
+ * @version 1.0.0
+ */
+// jshint esversion: 6
 
-// maximum number of keys that can be stored in the sync storage
-// chrome.storage.sync.MAX_ITEMS - 12 (wiggle room)
+/**
+ * The maximum number of individual keys that can be stored in the sync storage area.
+ * A small amount of wiggle room is subtracted from the hard limit (`chrome.storage.sync.MAX_ITEMS`).
+ * @const {number}
+ */
 const storageSyncMaxKeys = 500;
 
-// maximum size of data that can be stored in the sync storage (in Bytes)
-// chrome.storage.sync.QUOTA_BYTES_PER_ITEM - 192 (wiggle room)
+/**
+ * The maximum size in bytes for a single item in the sync storage area.
+ * A small amount of wiggle room is subtracted from the hard limit (`chrome.storage.sync.QUOTA_BYTES_PER_ITEM`).
+ * @const {number}
+ */
 const storageSyncMaxSize = 8000;
 
-// maximum number of fragments to maintain
+/**
+ * The maximum number of fragments to create when splitting a blacklist. This is a soft limit
+ * to prevent runaway fragmentation.
+ * @const {number}
+ */
 const storageMaxFragments = 100;
 
 /**
- * Splits the provided blacklist items into fragments in order to utilize the storage more efficient.
+ * Splits a large blacklist object into a series of smaller "fragment" objects.
+ * This is necessary to store large blacklists in `chrome.storage.sync`, which has
+ * limitations on the size of individual items. Each fragment is stored under a key
+ * like `blItemsFragment0`, `blItemsFragment1`, etc.
+ *
+ * @param {object} items - The complete blacklist object to be split.
+ * @returns {object} An object containing the generated fragments, ready to be stored.
+ *                   For example: `{ blItemsFragment0: { channels: [...] }, blItemsFragment1: { ... } }`.
  */
 function splitBlacklistItems(items) {
 	logTrace('invoking splitBlacklistItems($)', items);
@@ -82,7 +113,11 @@ function splitBlacklistItems(items) {
 }
 
 /**
- * Merges the provided blacklist fragments back into blacklist items.
+ * Merges a collection of blacklist fragments from storage back into a single, cohesive blacklist object.
+ * This function is the counterpart to `splitBlacklistItems`.
+ *
+ * @param {object} fragments - An object retrieved from storage, containing keys like `blItemsFragment0`, `blItemsFragment1`, etc.
+ * @returns {object} The fully reconstructed blacklist object.
  */
 function mergeBlacklistFragments(fragments) {
 	logTrace('invoking mergeBlacklistFragments($)', fragments);
@@ -135,7 +170,11 @@ function mergeBlacklistFragments(fragments) {
 }
 
 /**
- * Returns the approx. size required to store the provided data in the storage.
+ * Calculates the approximate size (in bytes) of an object when it is serialized to a JSON string.
+ * This is used to check if a blacklist will exceed the `chrome.storage.sync` quota before attempting to save it.
+ *
+ * @param {object|string} o - The object or string to measure.
+ * @returns {number} The length of the serialized JSON string.
  */
 function measureStoredSize(o) {
 	logTrace('invoking measureStoredSize($)', o);

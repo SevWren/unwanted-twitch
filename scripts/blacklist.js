@@ -1,10 +1,24 @@
 ﻿/**
- * Creates a table row for a blacklist item with a key and a remove button.
- * 
- * @param {string} key - The key/value to be displayed in the first cell of the row
- * @returns {HTMLTableRowElement} A table row element representing a blacklist item
+ * @file Manages the blacklist settings page (`views/blacklist.html`).
+ * @description This script handles all user interactions on the blacklist page, including adding, removing,
+ * importing, and exporting blacklisted items (categories, channels, tags, and titles). It communicates
+ * with the storage system (via `storage.js`) and the content scripts to apply changes. The page allows
+ * users to manage four types of blacklist entries, configure general settings like hiding reruns or
+ * followed channels from the filter, and choose between cloud (sync) and local storage.
+ *
+ * The script is responsible for:
+ * - Dynamically creating and managing the UI for blacklist items.
+ * - Validating user input, including regular expressions.
+ * - Handling the import of blacklist data from a JSON file.
+ * - Handling the export of the current blacklist to a JSON file.
+ * - Saving all settings and blacklist data to the chosen storage area.
+ * - Communicating with content scripts to apply the new blacklist immediately after saving.
+ * - Displaying storage usage statistics.
+ * - Providing visual feedback to the user (e.g., loading screens, save button flashing).
+ * @author Unwanted Twitch
+ * @license MIT
+ * @version 1.0.0
  */
-
 // jshint esversion: 6
 // jshint -W069
 
@@ -14,6 +28,12 @@
 
 /* END: runtime cache */
 
+/**
+ * Creates a table row for a blacklist item with a key and a remove button.
+ *
+ * @param {string} key - The key/value to be displayed in the first cell of the row.
+ * @returns {HTMLTableRowElement} A table row element representing a blacklist item.
+ */
 function createItemRow(key) {
 
 	let row = document.createElement('tr');
@@ -37,6 +57,13 @@ function createItemRow(key) {
 	return row;
 }
 
+/**
+ * Adds a single item to the specified table if it doesn't already exist.
+ *
+ * @param {HTMLTableElement} table - The table element to add the item to.
+ * @param {string} key - The item (e.g., channel name, category) to add.
+ * @returns {boolean} `true` if the item was added, `false` if it already existed.
+ */
 function addItem(table, key) {
 
 	// prevent adding the same key more than once
@@ -55,14 +82,12 @@ function addItem(table, key) {
 }
 
 /**
- * Adds the provided items to the specified table. If the provided items is not
- * an object, it simply returns the result of calling handleItemCount on the
- * table. Otherwise, it sorts the items (case insensitive), creates a table row
- * for each item, and appends them to the table.
+ * Adds a collection of items to the specified table.
+ * It sorts the items (case-insensitively) before creating and appending the corresponding table rows.
  *
- * @param {!Element} table the table to add the items to
- * @param {!Object.<string, *>=} items the items to add to the table
- * @return {boolean} the result of calling handleItemCount on the table
+ * @param {HTMLTableElement} table - The table to add the items to.
+ * @param {Object.<string, *>|string[]} [items] - The items to add, either as an object map or an array of strings.
+ * @returns {number} The total number of items in the table after the operation.
  */
 function addItems(table, items) {
 
@@ -96,10 +121,9 @@ function addItems(table, items) {
 }
 
 /**
- * Removes all items from the provided table.
+ * Removes all items (rows with class 'item') from the provided table.
  *
- * @param {!Element} table the table to clear
- * @return {number} the number of items in the table after clearing
+ * @param {HTMLTableElement} table - The table to clear.
  */
 function clearItems(table) {
 
@@ -116,6 +140,13 @@ function clearItems(table) {
 	flashSaveButton();
 }
 
+/**
+ * Checks if a given key already exists in the table.
+ *
+ * @param {HTMLTableElement} table - The table to check.
+ * @param {string} key - The key to look for.
+ * @returns {boolean} `true` if the item exists, `false` otherwise.
+ */
 function itemExists(table, key) {
 
 	const presentKeys = gatherKeysArray(table);
@@ -124,14 +155,11 @@ function itemExists(table, key) {
 }
 
 /**
- * Event handler for when the user adds a new item to the blacklist.
+ * Event handler for when the user adds a new item to the blacklist via the input field.
+ * This function processes the input value (trims, validates regex, normalizes case) and adds it to the table.
  *
- * This function trims the input string, removes consecutive whitespace, converts
- * quotes, checks if the string is a valid regular expression, and adds the string
- * to the table if it is not empty.
- *
- * @param {HTMLTableRowElement} row - The table row containing the input element
- * @param {boolean} [byUser=true] - Whether the function was called by a user action
+ * @param {HTMLTableRowElement} row - The table row containing the input element.
+ * @param {boolean} [byUser=true] - Whether the function was called by a direct user action (which triggers UI feedback like flashing the save button).
  */
 function onAddItem(row, byUser = true) {
 
@@ -185,10 +213,9 @@ function onAddItem(row, byUser = true) {
 }
 
 /**
- * Event handler for when the user removes an item from the blacklist.
- *
- * This function removes the row from the table and updates the count and
- * visibility of the "no items" row.
+ * Event handler for when the user clicks the "Remove" button on a blacklist item.
+ * It removes the corresponding row from the table and updates the UI.
+ * @this HTMLButtonElement
  */
 function onRemoveItem() {
 
@@ -202,11 +229,11 @@ function onRemoveItem() {
 }
 
 /**
- * Updates the count of items in the table's head and shows/hides
- * "no items" row and "Clear" button.
+ * Updates the item count in the table's header and manages the visibility
+ * of the "no items" row and the "Clear" button.
  *
- * @param {Element} table - The table that contains the items.
- * @return {Number} The number of items in the table.
+ * @param {HTMLTableElement} table - The table that contains the items.
+ * @returns {number} The number of items in the table.
  */
 function handleItemCount(table) {
 
@@ -248,12 +275,12 @@ function handleItemCount(table) {
 
 /**
  * Collects keys from elements with a `data-key` attribute within a table and
- * stores them in an object. Each key is mapped to the value `1`.
+ * stores them in an object map (e.g., `{ "key1": 1, "key2": 1 }`).
+ * This format is used for categories, channels, and tags for efficient lookups.
  *
- * @param {Element} table - The table element from which to gather keys.
- * @returns {Object} An object where each key from the table is mapped to `1`.
+ * @param {HTMLTableElement} table - The table element from which to gather keys.
+ * @returns {Object.<string, number>} An object where each key from the table is mapped to `1`.
  */
-
 function gatherKeysMap(table) {
 
 	let result = {};
@@ -270,14 +297,14 @@ function gatherKeysMap(table) {
 	return result;
 }
 
-function gatherKeysArray(table) {
 /**
  * Collects keys from elements with a `data-key` attribute within a table and
- * returns them in an array.
+ * returns them in an array. This format is used for titles.
  *
- * @param {Element} table - The table element from which to gather keys.
- * @returns {Array} An array of keys from the table.
+ * @param {HTMLTableElement} table - The table element from which to gather keys.
+ * @returns {string[]} An array of keys from the table.
  */
+function gatherKeysArray(table) {
 	let result = [];
 
 	let nodes = table.querySelectorAll('[data-key]');
@@ -293,25 +320,17 @@ function gatherKeysArray(table) {
 }
 
 /**
- * Saves the current blacklist configuration and updates the live filter.
+ * Saves the entire blacklist configuration and updates the live filter.
+ * This function orchestrates the saving process:
+ * 1. Shows a loading screen and disables buttons.
+ * 2. Saves general settings (storage mode, hide following/reruns).
+ * 3. Gathers all blacklist items from the UI tables.
+ * 4. Sends the complete blacklist to the content script via a runtime message.
+ *    The content script is responsible for writing to storage and applying the filter.
+ * 5. Waits for a confirmation message from the content script.
+ * 6. If successful, closes the blacklist tab. If it fails or times out, it alerts the user and keeps the tab open.
  *
- * Checks the current state of the blacklist settings checkboxes and saves
- * them to the storage. Adds all pending user inputs and updates the live
- * filter using the content script.
- *
- * @returns {Promise} A promise that resolves when saving is done.
- */
-
-/**
- * Saves the current blacklist configuration and updates the live filter.
- *
- * Checks the current state of the blacklist settings checkboxes and saves
- * them to the storage. Adds all pending user inputs and updates the live
- * filter using the content script. Waits for confirmation from the content
- * script before closing the tab. Handles sync quota errors gracefully by
- * potentially switching to local storage.
- *
- * @returns {Promise} A promise that resolves when saving is done or fails.
+ * @returns {Promise<void>} A promise that resolves when the save operation is complete (or has failed).
  */
 async function onSave() {
 
@@ -426,6 +445,10 @@ async function onSave() {
 	}
 }
 
+/**
+ * Closes the current tab. Intended to be called after a successful save or when the user clicks "Cancel".
+ * @returns {Promise<void>}
+ */
 async function onCancel() {
 
 	const tab = await chrome.tabs.getCurrent();
@@ -433,6 +456,10 @@ async function onCancel() {
 	await chrome.tabs.remove(tab.id);
 }
 
+/**
+ * Handles the file import process. It opens a file dialog, reads the selected JSON file,
+ * parses it, and adds the contained items to the respective blacklist tables.
+ */
 function onImport() {
 
 	let input = document.createElement('input');
@@ -524,6 +551,10 @@ function onImport() {
 	input.click();
 }
 
+/**
+ * Handles the file export process. It gathers all blacklist items from the UI,
+ * serializes them into a JSON string, and triggers a file download.
+ */
 function onExport() {
 
 	let result = {};
@@ -552,6 +583,11 @@ function onExport() {
 	document.body.removeChild(download);
 }
 
+/**
+ * Initiates a flashing animation on the "Save" button to indicate that there are unsaved changes.
+ * It sets a flag to prevent multiple intervals from being created.
+ * @param {number} [interval=400] - The interval in milliseconds for the flashing animation.
+ */
 function flashSaveButton(interval) {
 
 	if (typeof interval !== 'number') {
@@ -569,11 +605,18 @@ function flashSaveButton(interval) {
 	}, interval);
 }
 
+/**
+ * Shows an alert with an explanation of the supported title matching patterns.
+ */
 function onPatternExplained() {
 
 	alert( chrome.i18n.getMessage('blacklist_PatternExplainedText') );
 }
 
+/**
+ * Shows or hides the loading overlay and toggles the disabled state of the main action buttons.
+ * @param {boolean} show - `true` to show the loading screen, `false` to hide it.
+ */
 function toggleLoadingScreen(show) {
 
 	if (show === true) {

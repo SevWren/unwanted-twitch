@@ -1,3 +1,15 @@
+/**
+ * @file [LEGACY BACKUP] - directory.js.bak
+ * @description This file is a backup of a previous version of `directory.js`.
+ * It is not actively used by the extension and is kept for historical reference or in case a rollback is needed.
+ * The code in this file may be outdated and contains selectors and logic that are no longer compatible with the
+ * current Twitch.tv UI.
+ *
+ * It is recommended to remove this file in a future cleanup unless there is a specific reason to preserve this
+ * particular snapshot of the code. Full documentation has been omitted as this file is not in production use.
+ * @author Unwanted Twitch
+ * @license MIT
+ */
 // jshint esversion: 6
 // jshint -W069
 // jshint -W083
