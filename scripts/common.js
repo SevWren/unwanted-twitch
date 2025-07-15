@@ -1,17 +1,36 @@
+﻿/**
+ * @file This script provides common utility functions used across the "Unwanted Twitch" extension.
+ * @description It includes helper functions for string manipulation, pattern matching (exact, loose, regex),
+ * browser detection, and, most importantly, a set of wrappers for interacting with the `chrome.storage` API.
+ * The storage wrappers abstract the logic of choosing between 'sync' and 'local' storage based on user
+ * preferences, providing a consistent interface for other scripts. It also contains a tiered logging system
+ * that can be controlled by a global `debug` constant.
+ *
+ * This file is intended to be included in any context (background, content scripts, popups) where these
+ * utilities are needed, promoting code reuse and consistency.
+ * @author Unwanted Twitch
+ * @license MIT
+ * @version 1.0.0
+ */
 // jshint esversion: 6
 // jshint -W069
 
-// debug
-// 0 = TRACE, VERBOSE, INFO, WARN, ERROR
-// 1 = VERBOSE, INFO, WARN, ERROR
-// 2 = INFO, WARN, ERROR
-// 3 = WARN, ERROR
-// 4 = ERROR
-// 5 = NONE
+/**
+ * @const {number} debug - The global debug level for logging.
+ * @description Controls the verbosity of the logging functions.
+ * - 0: TRACE, VERBOSE, INFO, WARN, ERROR
+ * - 1: VERBOSE, INFO, WARN, ERROR
+ * - 2: INFO, WARN, ERROR
+ * - 3: WARN, ERROR
+ * - 4: ERROR
+ * - 5: NONE
+ */
 const debug = 0;
 
 /**
- * Returns a copy of the provided blacklist items.
+ * Creates a deep copy of a blacklist items object.
+ * @param {object} items - The object to clone.
+ * @returns {object} A deep copy of the input object.
  */
 function cloneBlacklistItems(items) {
 
@@ -19,7 +38,9 @@ function cloneBlacklistItems(items) {
 }
 
 /**
- * Returns if the extension is loaded via Firefox.
+ * Checks if the extension is running in Firefox.
+ * This is determined by the presence of the `browser` global in addition to `chrome`.
+ * @returns {boolean} `true` if the browser is Firefox, `false` otherwise.
  */
 function isFirefox() {
 	logTrace('invoking isFirefox()');
@@ -31,7 +52,10 @@ function isFirefox() {
 }
 
 /**
- * Returns if the provided term is supposed to be an exact match (case-sensitive).
+ * Determines if a filter term is an exact match term.
+ * Exact match terms are enclosed in single quotes (e.g., `'exact term'`).
+ * @param {string} term - The term to check.
+ * @returns {boolean} `true` if the term is an exact match pattern.
  */
 function isExactTerm(term) {
 
@@ -45,7 +69,10 @@ function isExactTerm(term) {
 }
 
 /**
- * Returns if the provided term may be loosely matched (contained, case-insensitive).
+ * Determines if a filter term is a loose match term.
+ * Loose match terms start with a tilde (`~`). This is not currently used for filtering but the helper exists.
+ * @param {string} term - The term to check.
+ * @returns {boolean} `true` if the term is a loose match pattern.
  */
 function isLooseTerm(term) {
 
@@ -55,7 +82,10 @@ function isLooseTerm(term) {
 }
 
 /**
- * Returns if the provided term is a regular expression pattern.
+ * Determines if a filter term is a regular expression.
+ * Regex terms are enclosed in slashes (e.g., `/pattern/i`).
+ * @param {string} term - The term to check.
+ * @returns {boolean} `true` if the term is a valid regular expression pattern.
  */
 function isRegExpTerm(term) {
 
@@ -68,8 +98,10 @@ function isRegExpTerm(term) {
 }
 
 /**
- * Builds a regular expression object from the provided term.
- * Returns `null` if the pattern is invalid.
+ * Converts a string pattern into a `RegExp` object.
+ * Handles extracting the pattern and flags from the string (e.g., `/pattern/i`).
+ * @param {string} term - The string to convert into a regular expression.
+ * @returns {RegExp|null} A `RegExp` object if the pattern is valid, otherwise `null`.
  */
 function toRegExp(term) {
 
@@ -102,7 +134,10 @@ function toRegExp(term) {
 }
 
 /**
- * Returns a normalized lowercase string without diacritics.
+ * Normalizes a string by trimming, converting to lowercase, and removing diacritical marks.
+ * This is essential for case-insensitive and accent-insensitive comparisons.
+ * @param {string} term - The string to normalize.
+ * @returns {string} The normalized string.
  */
 function normalizeCase(term) {
 
@@ -115,7 +150,9 @@ function normalizeCase(term) {
 }
 
 /**
- * Returns (async) with the selected storage mode, either "sync" or "local".
+ * Asynchronously determines the current storage mode ('sync' or 'local') based on user settings.
+ * It checks the `useLocalStorage` flag in `chrome.storage.local`.
+ * @returns {Promise<'sync'|'local'>} A promise that resolves to the current storage mode.
  */
 async function getStorageMode() {
 	logTrace('invoking getStorageMode()');
@@ -144,7 +181,9 @@ async function getStorageMode() {
 }
 
 /**
- * Wrapper to retrieve data from storage.
+ * A wrapper for `chrome.storage.get` that automatically uses the correct storage area (sync or local).
+ * @param {string|string[]|object|null} data - The key(s) to retrieve from storage.
+ * @returns {Promise<object>} A promise that resolves with the retrieved data.
  */
 async function storageGet(data) {
 	logTrace('invoking storageGet($)', data);
@@ -162,7 +201,9 @@ async function storageGet(data) {
 }
 
 /**
- * Wrapper to store data in storage.
+ * A wrapper for `chrome.storage.set` that automatically uses the correct storage area.
+ * @param {object} data - An object containing key-value pairs to store.
+ * @returns {Promise<Error|null>} A promise that resolves to the runtime error if one occurred, otherwise `null`.
  */
 async function storageSet(data) {
 	logTrace('invoking storageSet($)', data);
@@ -180,7 +221,9 @@ async function storageSet(data) {
 }
 
 /**
- * Wrapper to remove data from storage.
+ * A wrapper for `chrome.storage.remove` that automatically uses the correct storage area.
+ * @param {string|string[]} data - The key(s) to remove from storage.
+ * @returns {Promise<Error|null>} A promise that resolves to the runtime error if one occurred, otherwise `null`.
  */
 async function storageRemove(data) {
 	logTrace('invoking storageRemove($)', data);
@@ -198,7 +241,8 @@ async function storageRemove(data) {
 }
 
 /**
- * Wrapper to remove all data from storage.
+ * A wrapper for `chrome.storage.clear` that automatically uses the correct storage area.
+ * @returns {Promise<Error|null>} A promise that resolves to the runtime error if one occurred, otherwise `null`.
  */
 async function storageClear() {
 	logTrace('invoking storageClear()');
@@ -215,6 +259,10 @@ async function storageClear() {
 	return error;
 }
 
+/**
+ * Logs a trace message to the console if the debug level is 0.
+ * @param {...*} args - The arguments to log.
+ */
 function logTrace() {
 
 	if (debug > 0) { return null; }
@@ -226,6 +274,10 @@ function logTrace() {
 	return null;
 }
 
+/**
+ * Logs a verbose message to the console if the debug level is 1 or lower.
+ * @param {...*} args - The arguments to log.
+ */
 function logVerbose() {
 
 	if (debug > 1) { return null; }
@@ -237,6 +289,10 @@ function logVerbose() {
 	return null;
 }
 
+/**
+ * Logs an informational message to the console if the debug level is 2 or lower.
+ * @param {...*} args - The arguments to log.
+ */
 function logInfo() {
 
 	if (debug > 2) { return null; }
@@ -248,6 +304,10 @@ function logInfo() {
 	return null;
 }
 
+/**
+ * Logs a warning message to the console if the debug level is 3 or lower.
+ * @param {...*} args - The arguments to log.
+ */
 function logWarn() {
 
 	if (debug > 3) { return null; }
@@ -260,6 +320,10 @@ function logWarn() {
 	return null;
 }
 
+/**
+ * Logs an error message to the console if the debug level is 4 or lower.
+ * @param {...*} args - The arguments to log.
+ */
 function logError() {
 
 	if (debug > 4) { return null; }

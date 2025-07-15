@@ -1,63 +1,15 @@
-/* ==========================================================================
-   SUMMARY OF MAJOR FIXES AND ARCHITECTURAL CHANGES (June 2025)
-   Compare this VS the current official repo version to update with ENTIRE version differences
-   ==========================================================================
-   This file has been significantly refactored to work with the modern Twitch
-   UI and to fix critical performance and logic issues. The original script
-   was non-functional due to major changes in Twitch's front-end code.
-
-   The key changes are as follows:
-
-   1. COMPLETE SELECTOR OVERHAUL:
-      - PROBLEM: The original script relied entirely on stable `data-a-target`
-        attributes (e.g., `preview-card-image-link`, `tw-card-avatar-link`)
-        which Twitch has completely removed from directory and channel cards.
-      - SOLUTION: All DOM selectors were rewritten to be more robust. They
-        now rely on HTML structure and more stable attributes like `class`,
-        `href`, and `title` (e.g., `h2[title]` for category names,
-        `a.side-nav-card` for the sidebar, `button.tw-tag` for tags).
-
-   2. CONTEXT-AWARE PARSING FOR DIFFERENT PAGE TYPES:
-      - PROBLEM: The HTML structure for the main category directory (`/directory`)
-        is completely different from a channel listing page
-        (`/directory/category/...`). A single parsing function failed.
-      - SOLUTION: The script is now "context-aware."
-        - It uses the existing `getPageType()` function to identify if it is on
-          a `categories` or `channels` page.
-        - A new parser, `readCategoryCard()`, was created specifically for
-          the main directory's game cards.
-        - The `getDirectoryItems()` function now acts as a "router," calling
-          the correct parsing function (`readCategoryCard` or `readChannel`)
-          based on the current page type.
-
-   3. CORRECT ELEMENT HIDING ON GRID LAYOUTS:
-      - PROBLEM: On the main `/directory` page, hiding the `.game-card` element
-        left a large empty space in the grid, as the parent grid container
-        was still present.
-      - SOLUTION: The `readCategoryCard()` parser was updated to traverse UP
-        the DOM from the `.game-card` using `.closest('div[style*="order"]')`.
-        This finds the true parent grid item, which is now the element that
-        gets hidden, allowing the CSS grid to reflow correctly.
-
-   4. *NOT IMPLEMENTED YET! TODO* 
-      - REPLACED `setInterval` WITH `MutationObserver` TO FIX INFINITE LOOP:
-      - PROBLEM: The original `setInterval` polling method caused an infinite
-        loop and spammed the console. The script would hide an element,
-        Twitch's React framework would immediately re-render it (without our
-        modifications), and the `setInterval` would find and process the
-        "new" element again, endlessly.
-      - SOLUTION: The entire `setInterval` polling logic (`itemPollInterval`
-        and `checkForNewDirectoryItems`) was REMOVED. It has been replaced
-        with a modern and highly efficient `MutationObserver`.
-        - The `MutationObserver` watches the main content area (`.tw-tower`)
-          and only triggers when Twitch's framework *actually adds new nodes*
-          to the DOM (e.g., during an infinite scroll).
-        - This eliminates the performance-draining loop and works cooperatively
-          with the website's framework instead of fighting against it.
-
-   These changes make the extension faster, more stable, and significantly
-   more resilient to future minor UI updates from Twitch.
-   ========================================================================== */
+/**
+ * @file [LEGACY DEBUGGING] - directory.nonstop.polling.bug.js
+ * @description This file is a development snapshot created to diagnose and fix a "nonstop polling" bug.
+ * It contains experimental code, including tests for deleting elements instead of hiding them, and extensive
+ * comments detailing the architectural changes required to fix the original script's performance issues.
+ *
+ * This file is not actively used by the extension and is kept for historical/debugging reference.
+ * It is recommended to remove this file in a future cleanup. Full documentation has been omitted as this
+ * file is not in production use.
+ * @author Unwanted Twitch
+ * @license MIT
+ */
 
 
 
