@@ -1,14 +1,32 @@
 ﻿/*
-	START OF FORK-SPECIFIC COMMENTS
-	---------------------------------
-	This CSS file is part of a fork. The comments below highlight changes
-	or additions made relative to the original repository.
+    ==========================================================================
+    File: directory.css
+    Description:
+        This stylesheet provides the styles for the UI elements that are
+        injected directly into the Twitch.tv directory pages by the content
+        script (directory.js). This includes:
+
+        1. The primary hiding class (`.uttv-hidden-item`) that makes the
+           extension's filtering work.
+        2. The "Manage Blacklist" button that appears at the top of the page.
+        3. The "X" buttons that are overlaid on stream/category cards and tags,
+           allowing users to quickly blacklist items.
+
+        It also includes overrides for Twitch's dark theme to ensure the
+        injected UI elements are visually consistent.
+    ==========================================================================
 */
 
+/* ==========================================================================
+   Core Hiding Class
+   ========================================================================== */
+
 /*
- * .uttv-hidden-item: The primary class used by directory.js to hide filtered elements.
- * Using a unique name prevents conflicts with the original extension's CSS.
- * This rule is the most fundamental part of the extension's filtering capability.
+ * This is the most important class in the entire extension.
+ * When the content script determines an item should be filtered, it adds this
+ * class to the item's container. This rule is what makes it disappear.
+ * The `!important` flag is used to ensure it overrides any of Twitch's own
+ * display styles.
  */
 .uttv-hidden-item {
     display: none !important;

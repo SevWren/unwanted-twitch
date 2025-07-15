@@ -1,4 +1,19 @@
-﻿#popup {
+﻿/*
+    ==========================================================================
+    File: popup.css
+    Description:
+        This stylesheet provides the specific styles for the extension's
+        popup window (views/popup.html). It controls the layout, size, and
+        appearance of the elements within the small popup interface, including
+        the main icon and the action buttons/toggles.
+    ==========================================================================
+*/
+
+/* ==========================================================================
+   Main Popup Container
+   ========================================================================== */
+
+#popup {
 	text-align: right;
 	width: 256px;
 }

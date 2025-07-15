@@ -1,12 +1,29 @@
-﻿<link rel="stylesheet" type="text/css" href="/styles/common.css">
+﻿<!--
+    ==========================================================================
+    File: blacklist.html
+    Description:
+        This is the main settings page for the "Unwanted Twitch" extension.
+        It provides the user interface for managing all aspects of the blacklist,
+        including adding/removing items, configuring global settings, and
+        importing/exporting the blacklist data.
+
+        The interactivity of this page is controlled by `scripts/blacklist.js`.
+        The styling is provided by `styles/common.css` and `styles/blacklist.css`.
+    ==========================================================================
+-->
+<link rel="stylesheet" type="text/css" href="/styles/common.css">
 <link rel="stylesheet" type="text/css" href="/styles/blacklist.css">
 <div id="blacklist">
 
+	<!-- ==========================================================================
+	     Settings Section
+	     - Contains global toggles for filtering behavior and storage options.
+	   ========================================================================== -->
 	<div class="settings">
 
 		<div class="left">
 
-			<h2>
+			<h2 id="settings_headline">
 				Settings
 			</h2>
 

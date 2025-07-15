@@ -1,9 +1,26 @@
-﻿<link rel="stylesheet" type="text/css" href="/styles/common.css">
+﻿<!--
+    ==========================================================================
+    File: popup.html
+    Description:
+        This file defines the HTML structure for the extension's popup window,
+        which appears when the user clicks the extension icon in the browser
+        toolbar. It provides the main user controls for interacting with the
+        extension in a simple way.
+
+        The interactivity of this page is controlled by `scripts/popup.js`.
+        The styling is provided by `styles/common.css` and `styles/popup.css`.
+    ==========================================================================
+-->
+<link rel="stylesheet" type="text/css" href="/styles/common.css">
 <link rel="stylesheet" type="text/css" href="/styles/popup.css">
 <div id="popup">
 
+	<!-- The main icon displayed in the top left of the popup. -->
+	<!-- The background-image is set in popup.css, and the `disabled` class, -->
+	<!-- which applies a grayscale filter, is toggled by popup.js. -->
 	<div id="icon"></div>
 
+	<!-- Action Button: Opens the main blacklist management page. -->
 	<div class="action">
 		<button type="button" id="open_blacklist">
 			Manage Blacklist

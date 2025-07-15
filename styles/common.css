@@ -1,4 +1,22 @@
-﻿* {
+﻿/*
+    ==========================================================================
+    File: common.css
+    Description:
+        This stylesheet provides the common, shared styles used across all
+        of the extension's UI pages (popup.html, blacklist.html). It establishes
+        a consistent look and feel by defining a color palette, base styles for
+        standard HTML elements (body, buttons, tables, inputs), and a dark theme.
+
+        The use of CSS variables (`--UT-color1`, etc.) is central to this file,
+        allowing for easy theme management and consistency.
+    ==========================================================================
+*/
+
+/* ==========================================================================
+   Reset and Box Sizing
+   ========================================================================== */
+
+* {
 	border-style: solid;
 	border-width: 0;
 	box-sizing: border-box;
@@ -6,19 +24,26 @@
 	padding: 0px;
 }
 
-/** Abbreviations explained
+/* ==========================================================================
+   Color Palette & Theming (CSS Variables)
+   ========================================================================== */
+
+/**
+ * Abbreviations explained:
  * UT: Unwanted Twitch
+ * h-color: header color
  */
 
+/* Default Light Theme */
 :root {
 	--UT-color1: black;
 	--UT-color2: white;
 	--UT-h-color1: var(--UT-MainColor1);
-	--UT-MainColor1: #9147ff;
-	--UT-MainColor2: #772ce8;
+	--UT-MainColor1: #9147ff; /* Twitch's primary purple */
+	--UT-MainColor2: #772ce8; /* A darker purple for hover states */
 	--UT-btn-lowlight: #9A75D1;
-	--UT-Table-background-color1: #f5f4f6;
-	--UT-Table-background-color2: #dad8de;
+	--UT-Table-background-color1: #f5f4f6; /* For alternating table rows */
+	--UT-Table-background-color2: #dad8de; /* For table borders */
 	--UT-Main-background-color1: white;
 	--UT-Main-background-color2: white;
 	--UT-Transition-background-color: #C0BDC7;

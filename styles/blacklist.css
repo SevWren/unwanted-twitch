@@ -1,6 +1,29 @@
+/*
+    ==========================================================================
+    File: blacklist.css
+    Description:
+        This stylesheet provides the specific styles for the blacklist
+        management page (views/blacklist.html). It controls the layout of the
+        settings section, the four main blacklist tables (Categories, Channels,
+        Tags, Titles), and the fixed action bar at the bottom of the page.
+
+        It also includes styles for responsive behavior, ensuring the layout
+        adapts to different screen sizes.
+    ==========================================================================
+*/
+
+/* ==========================================================================
+   Main Container
+   ========================================================================== */
+
 #blacklist {
+	/* Add padding to the bottom to prevent the fixed action bar from overlapping content */
 	padding-bottom: 96px;
 }
+
+/* ==========================================================================
+   Settings Section
+   ========================================================================== */
 
 #blacklist .settings {
 	font-size: 80%;

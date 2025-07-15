@@ -1,4 +1,15 @@
-﻿<link rel="stylesheet" type="text/css" href="/styles/common.css">
+﻿<!--
+    ==========================================================================
+    File: blacklist.html.bak
+    Description:
+        This is a backup of a previous version of the blacklist management page.
+        It is not actively used by the extension and is likely kept for
+        historical reference or as a restore point.
+
+        It is recommended to remove this file in a future cleanup.
+    ==========================================================================
+-->
+<link rel="stylesheet" type="text/css" href="/styles/common.css">
 <link rel="stylesheet" type="text/css" href="/styles/blacklist.css">
 <div id="blacklist">
 
