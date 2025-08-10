@@ -1,12 +1,12 @@
 # Hide streams, games, channels and tags on: twitch.tv
 
 ## Project status
-- This forked version of the repo has been successfully updated to be compatible with the current Twitch theme and DOM structure with changes made to new twitch layout that was rolled out 8/8/25.
-- **Core functionality is now working as intended** on individual Game/Category pages, such as:
+- This forked version of the repo has been (partially) updated  to be compatible with the current Twitch theme and DOM structure with changes made to new twitch layout that was rolled out 8/8/25.
+- **Core functionality working as intended** on individual Game/Category pages, such as:
     - `twitch.tv/directory/category/just-chatting`
     - `twitch.tv/directory/category/retro`
     - `twitch.tv/directory/category/league-of-legends`
-- Known pages that still require specific logic/selectors:
+- Known pages that *may or may not* be updated to work in this forked repo:
     - `twitch.tv/directory/following` (hiding streams that meet saved criteria is not currently applied to this page)
     - `twitch.tv` (Frontpage)
     - `twitch.tv/directory` (html changes to category cards has not been udpated yet)
@@ -62,14 +62,15 @@ The "X" buttons on individual tags were being created but were not visible.
 -   **The Bug:** The tag buttons were not a "positioned" CSS element, causing the absolutely-positioned "X" buttons to render off-screen.
 -   **The Fix:** The `attachHideButtons` function in `directory.js` now dynamically applies `style.position = 'relative';` to each tag button, creating the necessary positioning context for the "X" to appear correctly in its top-right corner.
 
-## TODO: Unfinished Page logic / Templates 
+## TODO: Unfinished Page logic / Templates *as of 8/8/25*
 - Browse: Categories (Needs update to dynamically match new html updates as of 8/8/25)
 - Browse: Live Channels (Requires testing, mostly working)
+- Cloud Saving: This has not been a personal focus as personally I am at 13,561 entries and way above the cloud limit.  
 - Game: Videos (0% finished)
 - Game: Clips (0% finished)
 - Frontpage/Discover (carousel is not filtered) (0% finished)
 - Explore Gaming/IRL/Music/Creative/Esports - (Requires testing)
-- Following - (Requires specific logic)
+- Following - (Requires specific logic on top of html matching logic updates)
 - Sidebar (filtering only, no buttons to add items to the blacklist) - (Requires specific logic)
 - The primary focus has been to restore functionality to the core Game/Category pages, which is now complete.
 
