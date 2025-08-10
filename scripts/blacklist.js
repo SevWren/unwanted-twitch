@@ -320,130 +320,98 @@ function gatherKeysArray(table) {
 }
 
 /**
- * Saves the entire blacklist configuration and updates the live filter.
- * This function orchestrates the saving process:
- * 1. Shows a loading screen and disables buttons.
- * 2. Saves general settings (storage mode, hide following/reruns).
- * 3. Gathers all blacklist items from the UI tables.
- * 4. Sends the complete blacklist to the content script via a runtime message.
- *    The content script is responsible for writing to storage and applying the filter.
- * 5. Waits for a confirmation message from the content script.
- * 6. If successful, closes the blacklist tab. If it fails or times out, it alerts the user and keeps the tab open.
- *
- * @returns {Promise<void>} A promise that resolves when the save operation is complete (or has failed).
+ * Saves the entire blacklist configuration.
+ * This is the NEW, ROBUST architecture.
  */
 async function onSave() {
+    console.log('%c[UTTV BLACKLIST] Save process started.', 'color: cyan; font-weight: bold;');
+    toggleLoadingScreen(true);
 
-	// Disable buttons during save
-	toggleLoadingScreen(true); // Show loading overlay and disable buttons
+    try {
+        // Step 1: Save simple settings
+        console.log('[UTTV BLACKLIST] Saving checkbox settings...');
+        await chrome.storage.local.set({ 'useLocalStorage': !useSyncStorageCheckbox.checked });
+        await storageSet({ 'hideFollowing': hideFollowingCheckbox.checked });
+        await storageSet({ 'hideReruns': hideRerunsCheckbox.checked });
+        console.log('[UTTV BLACKLIST] Checkbox settings saved.');
 
-	try {
-		// Save settings first (these are small and should generally succeed)
-		await chrome.storage.local.set({ 'useLocalStorage': !useSyncStorageCheckbox.checked });
-		await storageSet({ 'hideFollowing': hideFollowingCheckbox.checked });
-		await storageSet({ 'hideReruns': hideRerunsCheckbox.checked });
+        // Step 2: Gather all blacklist items from the UI
+        document.querySelectorAll('button.add').forEach(e => {
+            const input = e.parentNode.parentNode.querySelector('input');
+            if (input && input.value.trim().length > 0) onAddItem(e.parentNode.parentNode, false);
+        });
+        let items = {
+            categories: gatherKeysMap(categories),
+            channels: gatherKeysMap(channels),
+            tags: gatherKeysMap(tags),
+            titles: gatherKeysArray(titles)
+        };
+        console.log('[UTTV BLACKLIST] Gathered all items from UI.');
 
-		// add all "pending" user inputs before gathering keys
-		document.querySelectorAll('button.add').forEach((e) => {
-			// Check if input has value before calling onAddItem
-			const input = e.parentNode.parentNode.querySelector('input');
-			if (input && input.value.trim().length > 0) {
-				onAddItem(e.parentNode.parentNode, false); // Add items without flashing save button
-			}
-		});
+        // Step 3: SAVE THE DATA DIRECTLY
+        console.log('[UTTV BLACKLIST] Attempting to save blacklist directly to storage...');
+        const saveResult = await putBlacklistedItems(items);
+        console.log('[UTTV BLACKLIST] Save operation completed with result:', saveResult);
 
-		/* BEGIN: update items */
-
-			let items = {};
-
-			items.categories = gatherKeysMap(categories);
-			items.channels   = gatherKeysMap(channels);
-			items.tags       = gatherKeysMap(tags);
-			items.titles     = gatherKeysArray(titles);
-
-			// store via content script to reflect changes immediately
-			let saveOutcome = { success: false, switchedToLocal: false }; // Store result object
-			try {
-				logInfo("Sending blacklist to content script for saving...");
-				// --- AWAIT the response with timeout ---
-				const responsePromise = chrome.runtime.sendMessage({ 'blacklistedItems': items });
-				const timeoutPromise = new Promise((_, reject) =>
-					// Increased timeout to 15 seconds for potentially large local saves
-					setTimeout(() => reject(new Error("Timeout waiting for save confirmation")), 15000)
-				);
-
-				// Wait for either the response or the timeout
-				const response = await Promise.race([responsePromise, timeoutPromise]);
-				// --- END AWAIT ---
-
-				logInfo("Response received from content script:", response);
-
-				// --- Check response object ---
-				// Ensure response is an object and has the expected properties
-				if (response && typeof response === 'object' && typeof response.success === 'boolean') {
-					saveOutcome = response; // Store the actual result { success: bool, switchedToLocal: bool }
-					if (saveOutcome.success) {
-						logInfo("Content script confirmed successful save processing.");
-						if (saveOutcome.switchedToLocal) {
-							logInfo("Save successful, but mode was switched to Local Storage.");
-							// Update the UI checkbox to reflect the change
-							useSyncStorageCheckbox.checked = false;
-							alert("Blacklist saved successfully to Local Storage (Cloud Sync was disabled due to size).");
-						} else {
-							logInfo("Blacklist saved successfully using the selected storage mode.");
-							// Optional: Briefly notify user of success without alert spam
-							// console.log("Blacklist saved.");
-						}
-					} else {
-						// The content script explicitly reported failure (e.g., critical error during save)
-						logError("Content script reported save FAILED.");
-						alert("Error: The extension failed to save the blacklist. Please check the console for details.");
-					}
-				} else if (response instanceof Error && response.message.includes("Timeout")) {
-					 logError("Timeout waiting for save confirmation from content script.");
-					 alert("Warning: Did not receive confirmation of blacklist save within 15 seconds. The save might have failed or is taking a long time. Please check the blacklist later.");
-					 saveOutcome.success = false; // Ensure success is false on timeout
-				} else {
-					 // Response was received but wasn't the expected format
-					 logError("Content script did not send expected confirmation object. Response:", response);
-					 alert("Warning: Could not confirm blacklist save status due to unexpected response. Please check the console.");
-					 saveOutcome.success = false; // Treat unexpected response as failure
-				}
-				// --- END Check ---
-
-			}
-			catch (error) {
-				// This catches errors from sendMessage itself or the timeout rejection
-				logError("Error sending blacklist message or receiving response:", error);
-				alert("Error saving blacklist: " + (error.message || error) + "\nPlease check the console.");
-				saveOutcome.success = false; // Mark failure
-			}
-
-		/* END: update items */
-
-		// --- Call onCancel AFTER response, conditionally ---
-		if (saveOutcome.success) {
-			logInfo("Save successful, closing blacklist tab.");
-			isModified = false; // Reset modified flag on success
-			saveButton.classList.remove('flashed');
-			await onCancel(); // Close the tab
-		} else {
-			logError("Save failed or confirmation timed out/invalid. Blacklist tab will NOT be closed automatically.");
-			alert("Save failed or timed out. The blacklist page will remain open. Please check the console for errors and try saving again later.");
-			// Re-enable buttons potentially disabled during save attempt
-			toggleLoadingScreen(false);
-			// Keep modified flag true so save button remains active/flashing
-			// isModified = false; // Don't reset this on failure
-			// saveButton.classList.remove('flashed'); // Keep flashing on failure
-		}
-	} catch (outerError) {
-		// Catch errors from setting storage mode, hideFollowing, hideReruns
-		logError("Error during initial settings save in onSave:", outerError);
-		alert("An error occurred while saving settings. Please check the console.");
-		toggleLoadingScreen(false); // Ensure buttons are re-enabled on error
-		// Keep modified flag potentially true
-	}
+        if (saveResult.success) {
+            console.log('[UTTV BLACKLIST] Save successful. Notifying content scripts...');
+            // Step 4: Send a simple, one-way notification
+            await chrome.runtime.sendMessage({ action: 'blacklistUpdated' });
+            console.log('[UTTV BLACKLIST] Notification sent. Closing window.');
+            isModified = false;
+            saveButton.classList.remove('flashed');
+            await onCancel();
+        } else {
+            // If the save itself failed, throw an error to be caught below.
+            throw new Error(saveResult.error || "An unknown error occurred during the save operation.");
+        }
+    } catch (error) {
+        console.error('[UTTV BLACKLIST] A critical error occurred during the save process:', error);
+        alert(`Save failed: ${error.message}. The page will remain open. Please check the console.`);
+        toggleLoadingScreen(false);
+    }
 }
+
+/**
+ * New local function to handle the full save logic, mirroring the robust logic from the content script.
+ * @param {object} items - The complete blacklist object to save.
+ * @returns {Promise<{success: boolean, error?: string}>}
+ */
+async function putBlacklistedItems(items) {
+    try {
+        let mode = await getStorageMode();
+        let isSync = (mode === 'sync');
+        let dataToStore = { 'blacklistedItems': items };
+
+        if (isSync && measureStoredSize(dataToStore) > storageSyncMaxSize) {
+            console.log('[UTTV BLACKLIST] Data is too large for sync storage, splitting into fragments.');
+            dataToStore = splitBlacklistItems(items);
+        }
+
+        const keysToRemove = ['blacklistedItems'];
+        for (let i = 0; i < storageMaxFragments; i++) {
+            keysToRemove.push('blItemsFragment' + i);
+        }
+        await storageRemove(keysToRemove);
+
+        let error = await storageSet(dataToStore);
+
+        if (error && error.message && error.message.includes('QUOTA_BYTES')) {
+            console.warn('[UTTV BLACKLIST] Sync quota exceeded. Switching to local storage and retrying.');
+            await chrome.storage.local.set({ 'useLocalStorage': true });
+            await storageRemove(keysToRemove); // Clear local fragments too
+            error = await storageSet({ 'blacklistedItems': items }); // Retry with non-fragmented data
+        }
+
+        if (error) {
+            throw error;
+        }
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+}
+
 
 /**
  * Closes the current tab. Intended to be called after a successful save or when the user clicks "Cancel".

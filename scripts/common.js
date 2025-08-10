@@ -248,7 +248,7 @@ async function storageClear() {
 	logTrace('invoking storageClear()');
 
 	const mode = await getStorageMode();
-	await chrome.storage[mode].clear(data);
+	await chrome.storage[mode].clear(); // CORRECTED: .clear() takes no arguments.
 	const error = chrome.runtime.lastError;
 
 	if (error) {

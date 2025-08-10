@@ -1,46 +1,51 @@
 ﻿{
-	"name": "[DEBUG] Unwanted Twitch",
-	"short_name": "Unwanted TTV",
-	"version": "0.01",
-	"description": "Sevwren's Debugging of Unwanted Twitch Extension",
-	"host_permissions": [
-		"https://www.twitch.tv/"
-	],
-	"permissions": [
-		"storage"
-	],
-	"default_locale": "en",
-	"background": {
-		"service_worker": "scripts/background.js"
-	},
-
-
-
-	"content_scripts": [
-		{
-			"matches": [
-				"https://www.twitch.tv/*"
-			],
-			"js": [
-				"scripts/common.js",
-				"scripts/storage.js",
-				"scripts/directory.js"
-			],
-			"css": [
-				"styles/directory.css"
-			]
-		}
-	],
-
-	"action": {
-		"default_icon": "images/icon32.png",
-		"default_popup": "views/popup.html"
-	},
-	"icons": {
-		"16": "images/icon16.png",
-		"32": "images/icon32.png",
-		"48": "images/icon48.png",
-		"128": "images/icon128.png"
-	},
-	"manifest_version": 3
+    "manifest_version": 3,
+    "name": "[DEBUG] Unwanted Twitch",
+    "short_name": "Unwanted TTV",
+    "version": "0.01",
+    "description": "Sevwren's Debugging of Unwanted Twitch Extension",
+    "host_permissions":
+    [
+        "https://www.twitch.tv/"
+    ],
+    "permissions":
+    [
+        "storage"
+    ],
+    "default_locale": "en",
+    "background":
+    {
+        "service_worker": "scripts/background.js"
+    },
+    "content_scripts":
+    [
+        {
+            "matches":
+            [
+                "https://www.twitch.tv/*"
+            ],
+            "js":
+            [
+                "scripts/common.js",
+                "scripts/storage.js",
+                "scripts/directory.js"
+            ],
+            "css":
+            [
+                "styles/directory.css"
+            ]
+        }
+    ],
+    "action":
+    {
+        "default_icon": "images/icon32.png",
+        "default_popup": "views/popup.html"
+    },
+    "icons":
+    {
+        "16": "images/icon16.png",
+        "32": "images/icon32.png",
+        "48": "images/icon48.png",
+        "128": "images/icon128.png"
+    }
 }

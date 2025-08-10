@@ -31,8 +31,9 @@
 /*
  * This container is injected by the addManagementButton() function in directory.js.
  * It provides a stable anchor for positioning the button.
+ * FIX: Changed selector from class to attribute to match JS.
  */
-.uttv-management-container {
+div[data-uttv-management] {
     text-align: right;
     margin-bottom: 1rem; /* Provide some space below the button */
 }
